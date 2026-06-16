@@ -243,7 +243,7 @@ function tagsFor(m) {
   const t = [];
   if (m.id.startsWith("TEE/")) t.push(["private", "priv", "Runs in a Trusted Execution Environment"]);
   const ob = (m.owned_by || "").toLowerCase();
-  if (ob === "openai" || ob === "anthropic" || ob === "x-ai") t.push(["closed source", "closed", "Closed-source / proprietary model"]);
+  if (["openai", "anthropic", "x-ai", "google", "gemini"].includes(ob)) t.push(["closed source", "closed", "Closed-source / proprietary model"]);
   return t;
 }
 function tagEls(m) {
