@@ -1,0 +1,13 @@
+{
+  "name": "presentation-gptdiff-realtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Stream from NanoGPT's xiaomi/mimo-v2.5-pro-ultraspeed via a tiny local proxy",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

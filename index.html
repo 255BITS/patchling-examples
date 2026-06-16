@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NanoGPT — stream</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
+  header { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap; }
+  h1 { font-size: 1.2rem; margin: 0; flex: 1; }
+  #status { font-size: .8rem; opacity: .6; }
+  button { font: inherit; padding: .5rem .9rem; border-radius: .5rem; border: 1px solid #8888; cursor: pointer; background: #8881; }
+  button:disabled { opacity: .5; cursor: default; }
+  textarea { width: 100%; box-sizing: border-box; font: inherit; padding: .6rem; border-radius: .5rem; border: 1px solid #8888; }
+  #out { white-space: pre-wrap; word-wrap: break-word; background: #8881; border-radius: .5rem; padding: 1rem; min-height: 4rem; margin-top: 1rem; }
+  .row { display: flex; gap: .5rem; margin-top: .75rem; }
+  .row textarea { flex: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>NanoGPT · xiaomi/mimo-v2.5-pro-ultraspeed</h1>
+  <span id="status">via local proxy</span>
+</header>
+
+<div class="row">
+  <textarea id="prompt" rows="3" placeholder="Ask something…">Write a haiku about diffs.</textarea>
+  <button id="send">Send</button>
+</div>
+
+<div id="out"></div>
+
+<script type="module">
+const out = document.getElementById("out");
+const sendBtn = document.getElementById("send");
+
+// The key lives on the local proxy (server.mjs) — the browser just calls /api/chat.
+// When NanoGPT's OAuth CSP is fixed, this can call nano-gpt.com directly instead.
+async function send() {
+  sendBtn.disabled = true;
+  out.textContent = "";
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: document.getElementById("prompt").value }),
+    });
+    if (!res.ok) { out.textContent = "Error: " + (await res.text()); return; }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t.startsWith("data:")) continue;
+        const data = t.slice(5).trim();
+        if (data === "[DONE]") return;
+        try {
+          const delta = JSON.parse(data).choices?.[0]?.delta?.content;
+          if (delta) out.textContent += delta;
+        } catch {}
+      }
+    }
+  } catch (e) {
+    out.textContent = "Error: " + e.message;
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+sendBtn.addEventListener("click", send);
+</script>
+</body>
+</html>
