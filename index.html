@@ -44,11 +44,12 @@
   .tag { font-family: system-ui, sans-serif; font-size: 10px; padding: .05rem .35rem; border-radius: .6rem; white-space: nowrap; }
   .tag.priv { background: #3b82f622; color: #2563eb; }
   .tag.closed { background: #f59e0b22; color: #b45309; }
-  #playmodal { position: fixed; inset: 0; background: #000a; display: none; align-items: center; justify-content: center; z-index: 50; }
-  #playmodal.open { display: flex; }
-  .play-card { background: #fff; color: #111; border-radius: .6rem; overflow: hidden; width: min(94vw, 420px); box-shadow: 0 12px 48px #000a; }
-  .play-bar { display: flex; justify-content: space-between; align-items: center; padding: .45rem .7rem; background: #f1f1f1; font-size: .85rem; }
-  #playframe { border: 0; width: 100%; height: 540px; display: block; background: #0f0f1a; }
+  #playmodal { position: fixed; inset: 0; background: #000; display: none; z-index: 50; }
+  #playmodal.open { display: block; }
+  #playframe { border: 0; width: 100vw; height: 100vh; display: block; background: #222; }
+  #playclose { position: fixed; top: 12px; right: 14px; z-index: 51; background: #000a; color: #fff;
+               border: 1px solid #fff6; border-radius: .4rem; padding: .35rem .7rem; cursor: pointer; font: 14px system-ui; }
+  #playclose:hover { background: #000d; }
   .spin { display: inline-block; animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
@@ -79,59 +80,42 @@
 <label for="path">File path</label>
 <input id="path" value="index.html" />
 
-<label for="content">Existing file — a tiny playable game</label>
+<label for="content">Existing file — a plain little game (spice it up with the goal below)</label>
 <textarea id="content" rows="14"><!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>Power Dash</title>
+<title>Catcher</title>
 <style>
-  body{margin:0;background:#0f0f1a;color:#eee;font:16px system-ui;text-align:center}
-  h3{margin:.6rem}
-  canvas{background:#1b1b2b;border-radius:8px;touch-action:none}
-  #hud{font:14px ui-monospace,monospace;min-height:1.2em}
-  .legend{font-size:12px;opacity:.7;margin:.4rem}
+  body{margin:0;background:#222;color:#ddd;font:16px system-ui;text-align:center}
+  h3{margin:.6rem;font-weight:normal}
+  canvas{background:#000;display:block;margin:12px auto}
+  #s{font:14px ui-monospace,monospace}
 </style>
 </head>
 <body>
-<h3>Power Dash</h3>
-<div id="hud">Score: 0</div>
-<canvas id="c" width="360" height="460"></canvas>
-<div class="legend">arrow keys move &middot; star +1 &middot; bomb -5 &middot; green=speed blue=shield gold=double</div>
+<h3>Catcher</h3>
+<div id="s">Score: 0</div>
+<canvas id="c" width="420" height="560"></canvas>
 <script>
+// A very plain game: move the gray paddle with the arrow keys and catch the
+// falling white blocks for 1 point each. That's it. Ask the AI to make it fun.
 const c=document.getElementById('c'), g=c.getContext('2d');
-let px=157, pw=46, speed=5, keys={}, items=[], score=0, frame=0, fx={};
-// Power-ups last a few seconds. Add your own in the goal box and let the AI patch it in!
-const ICON={star:'STAR',bomb:'BOMB',speed:'SPD',shield:'SHLD',double:'x2'};
-const COLOR={star:'#f6c945',bomb:'#ff5470',speed:'#39d353',shield:'#4fd1c5',double:'#c084fc'};
+let px=178, pw=64, keys={}, blocks=[], score=0, f=0;
 addEventListener('keydown',e=>{keys[e.key]=1; if(e.key.indexOf('Arrow')===0)e.preventDefault();});
 addEventListener('keyup',e=>{keys[e.key]=0;});
-function spawn(){
-  const r=Math.random();
-  const type = r<0.12?'speed' : r<0.22?'shield' : r<0.32?'double' : r<0.5?'bomb' : 'star';
-  items.push({type, x:20+Math.random()*320, y:-20, vy:2+Math.random()*2.5});
-}
-function collect(it){
-  if(it.type==='star') score += fx.double?2:1;
-  else if(it.type==='bomb'){ if(!fx.shield) score=Math.max(0,score-5); }
-  else fx[it.type]=320;
-}
 function loop(){
-  frame++; if(frame%38===0) spawn();
-  const s = speed*(fx.speed?1.8:1);
-  if(keys['ArrowLeft']) px-=s;
-  if(keys['ArrowRight']) px+=s;
-  px=Math.max(0,Math.min(360-pw,px));
-  for(const it of items){ it.y+=it.vy;
-    if(it.y>440 && it.y<462 && it.x>px-10 && it.x<px+pw+10){ collect(it); it.dead=1; } }
-  items=items.filter(it=>!it.dead && it.y<482);
-  for(const k in fx){ if(--fx[k]<=0) delete fx[k]; }
-  g.clearRect(0,0,360,460);
-  g.fillStyle = fx.shield?'#4fd1c5':'#f6c945';
-  g.fillRect(px,442,pw,14);
-  g.font='bold 13px ui-monospace,monospace'; g.textAlign='center';
-  for(const it of items){ g.fillStyle=COLOR[it.type]; g.fillText(ICON[it.type],it.x,it.y); }
-  document.getElementById('hud').textContent='Score: '+score+(Object.keys(fx).length?'  ['+Object.keys(fx).join(' ')+']':'');
+  f++; if(f%45===0) blocks.push({x:20+Math.random()*380, y:-12, v:3});
+  if(keys['ArrowLeft']) px-=6;
+  if(keys['ArrowRight']) px+=6;
+  px=Math.max(0,Math.min(420-pw,px));
+  for(const b of blocks){ b.y+=b.v;
+    if(b.y>540 && b.x>px-6 && b.x<px+pw+6){ score++; b.dead=1; } }
+  blocks=blocks.filter(b=>!b.dead && b.y<580);
+  g.clearRect(0,0,420,560);
+  g.fillStyle='#888'; g.fillRect(px,542,pw,12);
+  g.fillStyle='#fff'; for(const b of blocks) g.fillRect(b.x-6,b.y-6,12,12);
+  document.getElementById('s').textContent='Score: '+score;
   requestAnimationFrame(loop);
 }
 loop();
@@ -142,7 +126,7 @@ loop();
 <button id="play" class="go" style="margin-top:.4rem">▶ Play this file</button>
 
 <label for="goal">Goal (what to change)</label>
-<input id="goal" value="Add a purple magnet power-up that briefly pulls nearby stars toward the paddle." />
+<input id="goal" value="Add colorful power-ups: a gold block that doubles points for 5s and a green block that speeds up the paddle. Show active power-ups on screen." />
 
 <button id="run" class="go">Diff &amp; apply</button>
 
@@ -161,10 +145,8 @@ loop();
 <button id="accept" class="go" disabled>⤺ Replace editor with new file</button>
 
 <div id="playmodal">
-  <div class="play-card">
-    <div class="play-bar"><span>▶ Preview — <b id="playtitle">index.html</b></span><button id="playclose" class="link">✕ close</button></div>
-    <iframe id="playframe" sandbox="allow-scripts" title="game preview"></iframe>
-  </div>
+  <iframe id="playframe" sandbox="allow-scripts" title="game preview"></iframe>
+  <button id="playclose">✕ close (Esc)</button>
 </div>
 
 <script type="module">
@@ -495,7 +477,13 @@ $("accept").addEventListener("click", () => { if (newContent != null) { $("conte
 
 // ---------- play modal: render the current file in a sandboxed iframe ----------
 const playModal = $("playmodal"), playFrame = $("playframe");
-function openPlay() { $("playtitle").textContent = $("path").value.trim() || "file"; playFrame.srcdoc = $("content").value; playModal.classList.add("open"); }
+function openPlay() {
+  // Focus the game so arrow keys work immediately — no clicking needed.
+  playFrame.onload = () => { try { playFrame.contentWindow.focus(); } catch {} };
+  playFrame.srcdoc = $("content").value;
+  playModal.classList.add("open");
+  playFrame.focus();
+}
 function closePlay() { playModal.classList.remove("open"); playFrame.srcdoc = ""; }
 $("play").addEventListener("click", openPlay);
 $("playclose").addEventListener("click", closePlay);
