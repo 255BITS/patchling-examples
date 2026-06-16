@@ -26,6 +26,14 @@
   #progress .dim { opacity: .6; }
   #key { display: none; margin-top: .5rem; }
   #key input { max-width: 420px; display: inline-block; width: auto; }
+  #modelrow { font-size: .85rem; margin-top: .9rem; }
+  #modelrow b { font-family: ui-monospace, monospace; }
+  #modelpicker { display: none; margin-top: .4rem; border: 1px solid #8884; border-radius: .5rem; padding: .6rem; max-width: 520px; }
+  #modellist { max-height: 240px; overflow: auto; margin-top: .4rem; }
+  #modellist button { display: block; width: 100%; text-align: left; font-family: ui-monospace, monospace; font-size: 12px;
+                      padding: .3rem .4rem; border: none; background: none; border-radius: .3rem; cursor: pointer; }
+  #modellist button:hover { background: #8882; }
+  #modellist button.sel { background: #2563eb22; font-weight: 600; }
   .spin { display: inline-block; animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
@@ -43,6 +51,13 @@
   <input id="keyinput" placeholder="sk-nano-…" />
   <button id="keysave" class="link">save</button>
   <span class="dim" style="font-size:.78rem">— from nano-gpt.com → Settings → API</span>
+</div>
+
+<div id="modelrow">Model: <b id="modelname">…</b> <button id="modelchange" class="link">change</button></div>
+<div id="modelpicker">
+  <input id="modelsearch" placeholder="filter 600+ models, or type an exact id…" autocomplete="off" />
+  <div id="modellist"></div>
+  <div class="dim" style="font-size:.75rem;margin-top:.3rem"><span id="modelcount"></span> · Enter to use exact text</div>
 </div>
 
 <label for="path">File path</label>
@@ -76,9 +91,11 @@
 import { buildEnvironment, generateDiff, smartapply, parseDiffPerFile, callLlmForApply, setEnv }
   from "https://esm.sh/gh/255BITS/gptdiff-js";
 
-const MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
+const DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
 const NANOGPT = "https://nano-gpt.com";
 const $ = (id) => document.getElementById(id);
+
+let MODEL = localStorage.getItem("ngpt_model") || DEFAULT_MODEL;
 
 // NanoGPT canonicalizes the loopback host to "localhost"; start there so the OAuth
 // redirect returns to the same origin (keeping sessionStorage intact).
@@ -151,6 +168,47 @@ $("signin").addEventListener("click", (e) => { e.preventDefault(); signIn().catc
 $("pastebtn").addEventListener("click", () => { $("key").style.display = "block"; $("keyinput").focus(); });
 $("keysave").addEventListener("click", () => { const k = $("keyinput").value.trim(); if (k) { setKey(k); $("key").style.display = "none"; renderAuth(); } });
 $("signout").addEventListener("click", () => { setKey(null); renderAuth(); });
+
+// ---------- model selection ----------
+let allModels = null;
+function setModel(id) { MODEL = id; localStorage.setItem("ngpt_model", id); $("modelname").textContent = id; }
+
+async function loadModels() {
+  if (allModels) return allModels;
+  try {
+    const headers = {}; const k = getKey(); if (k) headers.Authorization = `Bearer ${k}`;
+    const r = await fetch(`${NANOGPT}/api/v1/models`, { headers });
+    const arr = (await r.json()).data || [];
+    allModels = arr.map((m) => m.id).filter(Boolean).sort();
+  } catch { /* ignore */ }
+  if (!allModels || !allModels.length) allModels = [DEFAULT_MODEL]; // fallback; custom ids still typeable
+  return allModels;
+}
+
+function renderModelList() {
+  const q = $("modelsearch").value.trim().toLowerCase();
+  const matches = (allModels || []).filter((m) => m.toLowerCase().includes(q));
+  const shown = matches.slice(0, 200);
+  $("modellist").innerHTML = "";
+  for (const id of shown) {
+    const b = document.createElement("button");
+    b.textContent = id;
+    if (id === MODEL) b.className = "sel";
+    b.addEventListener("click", () => { setModel(id); $("modelpicker").style.display = "none"; });
+    $("modellist").appendChild(b);
+  }
+  $("modelcount").textContent = `${matches.length} match${matches.length === 1 ? "" : "es"}` + (matches.length > shown.length ? ` (showing ${shown.length})` : "");
+}
+
+$("modelchange").addEventListener("click", async () => {
+  const open = $("modelpicker").style.display === "block";
+  $("modelpicker").style.display = open ? "none" : "block";
+  if (!open) { $("modelsearch").value = ""; $("modellist").innerHTML = "<div class='dim'>loading…</div>"; await loadModels(); renderModelList(); $("modelsearch").focus(); }
+});
+$("modelsearch").addEventListener("input", renderModelList);
+$("modelsearch").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { const v = $("modelsearch").value.trim(); if (v) { setModel(v); $("modelpicker").style.display = "none"; } }
+});
 
 // ---------- streaming LLM client injected into gptdiff-js ----------
 const fmtCost = (c) => "$" + (c || 0).toFixed(5);
@@ -271,6 +329,7 @@ $("accept").addEventListener("click", () => { if (newContent != null) { $("conte
 
 // ---------- boot ----------
 (async () => {
+  $("modelname").textContent = MODEL;
   try { await handleRedirect(); } catch (e) { $("status").textContent = "sign-in error: " + e.message; }
   renderAuth();
 })();
