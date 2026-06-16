@@ -16,6 +16,19 @@ to produce a diff, then `smartapply(diff, files)` to apply it, and returns both 
 the new file map. gptdiff-js already defaults to NanoGPT's base URL and the same model, so the
 server just hands it our key.
 
+The two LLM calls take a few seconds, so the response is **streamed as Server-Sent Events** with
+real progress — not a spinner. The server injects a streaming LLM client into gptdiff-js and
+emits, per `data:` line:
+
+| event | payload | meaning |
+|---|---|---|
+| `phase`  | `{ phase }` | current stage (Generating diff / Applying diff) |
+| `stream` | `{ phase, outChars }` | live count of generated characters (incl. reasoning) |
+| `usage`  | `{ inTok, outTok, costUsd }` | exact cumulative input/output tokens + USD cost from NanoGPT |
+| `done`   | `{ diff, files }` | final diff + new file map |
+
+The UI shows ↓ input / ↑ output tokens, live cost, elapsed time, and the current phase while it works.
+
 ## Why a local proxy instead of OAuth?
 
 NanoGPT's in-browser OAuth PKCE flow is currently blocked by a `form-action 'self'` CSP on

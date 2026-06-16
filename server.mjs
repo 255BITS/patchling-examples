@@ -10,7 +10,7 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, normalize } from "node:path";
-import { buildEnvironment, generateDiff, smartapply } from "gptdiff-js";
+import { buildEnvironment, generateDiff, smartapply, callLlmForApply } from "gptdiff-js";
 import { getApiKey } from "./auth.mjs";
 
 const MODEL = process.env.NANOGPT_MODEL || "xiaomi/mimo-v2.5-pro-ultraspeed";
@@ -28,21 +28,90 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// gptdiff flow: diff the existing files against the goal, smartapply, return the new files.
+// gptdiff flow, streamed: diff the existing files against the goal, smartapply, return new files.
 //   request:  { goal: string, files: { [path]: content } }
-//   response: { diff: string, files: { [path]: content } }
+//   response: Server-Sent Events, one JSON per `data:` line:
+//     { t:"phase",  phase }                       — current stage
+//     { t:"stream", phase, outChars }             — live count of generated characters
+//     { t:"usage",  inTok, outTok, costUsd }      — exact cumulative tokens + USD cost
+//     { t:"done",   diff, files } | { t:"error", error }
 async function chat(req, res) {
   const { goal, prompt, files } = JSON.parse((await readBody(req)) || "{}");
   const instruction = goal || prompt || "";
   if (!instruction) throw new Error("missing 'goal'");
   if (!files || typeof files !== "object" || !Object.keys(files).length) throw new Error("missing 'files'");
 
-  const opts = { apiKey: await getApiKey(), model: MODEL };
-  const diff = await generateDiff(buildEnvironment(files), instruction, opts); // existing -> diff
-  const updated = await smartapply(diff, files, opts);                          // diff -> new files
+  res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+  const send = (o) => res.write(`data: ${JSON.stringify(o)}\n\n`);
 
-  res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ diff, files: updated }));
+  // Real, cumulative metrics across every underlying LLM call.
+  let inTok = 0, outTok = 0, costUsd = 0, outChars = 0, lastTick = 0;
+
+  // A streaming OpenAI-compatible client matching gptdiff's callLlm contract. It reports
+  // live generated-char counts and reads NanoGPT's exact token/cost figures per call.
+  const streamingCallLlm = (phase) => async ({ apiKey, baseUrl, model, messages, maxTokens = 30000, temperature = 1.0 }) => {
+    send({ t: "phase", phase });
+    const endpoint = (baseUrl || "https://nano-gpt.com/api/v1/").replace(/\/+$/, "") + "/chat/completions";
+    const r = await fetch(endpoint, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, stream: true }),
+    });
+    if (!r.ok) throw new Error(`LLM ${r.status}: ${await r.text()}`);
+
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "", content = "", pricing = null;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        const tl = line.trim();
+        if (!tl.startsWith("data:")) continue;
+        const data = tl.slice(5).trim();
+        if (data === "[DONE]") continue;
+        let j; try { j = JSON.parse(data); } catch { continue; }
+        const d = j.choices?.[0]?.delta;
+        if (d) {
+          if (d.content) content += d.content;
+          const piece = (d.content || "") + (d.reasoning || ""); // reasoning is billed output too
+          if (piece) {
+            outChars += piece.length;
+            const now = Date.now();
+            if (now - lastTick > 100) { lastTick = now; send({ t: "stream", phase, outChars }); }
+          }
+        }
+        if (j.x_nanogpt_pricing) pricing = j.x_nanogpt_pricing;
+      }
+    }
+    inTok += pricing?.inputTokens ?? 0;
+    outTok += pricing?.outputTokens ?? 0;
+    costUsd += pricing?.costUsd ?? pricing?.cost ?? 0;
+    send({ t: "usage", inTok, outTok, costUsd });
+    return { choices: [{ message: { content } }] };
+  };
+
+  try {
+    const apiKey = await getApiKey();
+    // existing -> diff
+    const diff = await generateDiff(buildEnvironment(files), instruction, {
+      apiKey, model: MODEL, callLlm: streamingCallLlm("Generating diff"),
+    });
+    // diff -> new files (reuse gptdiff's apply prompt, but with our streaming client)
+    const applyLlm = streamingCallLlm("Applying diff");
+    const updated = await smartapply(diff, files, {
+      apiKey, model: MODEL,
+      callLlmForApply: (p, original, fileDiff, model, opts) =>
+        callLlmForApply(p, original, fileDiff, model, { ...opts, callLlm: applyLlm }),
+    });
+    send({ t: "done", diff, files: updated });
+  } catch (e) {
+    send({ t: "error", error: e.message });
+  }
+  res.end();
 }
 
 function readBody(req) {

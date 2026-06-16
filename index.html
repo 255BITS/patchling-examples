@@ -20,6 +20,12 @@
   pre { font-family: ui-monospace, monospace; font-size: 13px; white-space: pre-wrap; word-break: break-word;
         background: #8881; border-radius: .5rem; padding: .8rem; min-height: 3rem; margin: 0; }
   .diff .add { color: #1a7f37; } .diff .del { color: #cf222e; } .diff .hdr { opacity: .6; }
+  #progress { display: none; margin-top: .8rem; padding: .7rem .9rem; border: 1px solid #8884; border-radius: .5rem;
+              background: #8881; font-size: 13px; }
+  #progress .metrics { font-family: ui-monospace, monospace; margin-top: .25rem; }
+  #progress .dim { opacity: .6; }
+  .spin { display: inline-block; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -40,6 +46,14 @@
 <input id="goal" value="Make greet() return the string instead of printing, and add a type hint." />
 
 <button id="run">Diff &amp; apply</button>
+
+<div id="progress">
+  <span class="spin">◐</span> <b id="phase">starting…</b> · ⏱ <span id="elapsed">0.0</span>s
+  <div class="metrics">
+    ↓ <span id="inTok">0</span> in · ↑ <span id="outTok">0</span> out · <span id="cost">$0.00000</span>
+    <span id="live" class="dim"></span>
+  </div>
+</div>
 
 <div class="cols" style="margin-top:1rem">
   <div><label>Generated diff</label><pre id="diff" class="diff"></pre></div>
@@ -65,27 +79,61 @@ function renderDiff(diff) {
   }
 }
 
+const fmtCost = (c) => "$" + (c || 0).toFixed(5);
+const n = (x) => (x || 0).toLocaleString();
+
 async function run() {
   const path = $("path").value.trim() || "file.txt";
-  runBtn.disabled = true; acceptBtn.disabled = true;
-  $("diff").textContent = "thinking… (diff → smartapply, two LLM calls)";
-  $("result").textContent = "";
-  newContent = null;
+  const content = $("content").value;
+  runBtn.disabled = true; acceptBtn.disabled = true; newContent = null;
+  $("diff").textContent = ""; $("result").textContent = "";
+
+  // Live elapsed timer (client-side); metric values are pushed from the server.
+  $("progress").style.display = "block";
+  document.querySelector("#progress .spin").style.display = "";
+  $("inTok").textContent = $("outTok").textContent = "0"; $("cost").textContent = "$0.00000";
+  $("live").textContent = ""; $("phase").textContent = "starting…";
+  const t0 = performance.now();
+  const timer = setInterval(() => { $("elapsed").textContent = ((performance.now() - t0) / 1000).toFixed(1); }, 100);
+
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ goal: $("goal").value, files: { [path]: $("content").value } }),
+      body: JSON.stringify({ goal: $("goal").value, files: { [path]: content } }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || res.statusText);
-    renderDiff(data.diff || "");
-    newContent = data.files?.[path] ?? "(file was deleted)";
-    $("result").textContent = newContent;
-    acceptBtn.disabled = newContent === "(file was deleted)";
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t.startsWith("data:")) continue;
+        const o = JSON.parse(t.slice(5).trim());
+        if (o.t === "phase") $("phase").textContent = o.phase;
+        else if (o.t === "stream") { $("phase").textContent = o.phase; $("live").textContent = `· streaming ↑ ${n(o.outChars)} chars…`; }
+        else if (o.t === "usage") { $("inTok").textContent = n(o.inTok); $("outTok").textContent = n(o.outTok); $("cost").textContent = fmtCost(o.costUsd); $("live").textContent = ""; }
+        else if (o.t === "error") throw new Error(o.error);
+        else if (o.t === "done") {
+          renderDiff(o.diff || "");
+          newContent = o.files?.[path] ?? "(file was deleted)";
+          $("result").textContent = newContent;
+          acceptBtn.disabled = newContent === "(file was deleted)";
+        }
+      }
+    }
+    $("phase").textContent = "done";
+    document.querySelector("#progress .spin").style.display = "none";
   } catch (e) {
     $("diff").textContent = "Error: " + e.message;
+    $("progress").style.display = "none";
   } finally {
+    clearInterval(timer);
     runBtn.disabled = false;
   }
 }
