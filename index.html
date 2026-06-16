@@ -57,11 +57,12 @@
   <span class="dim" style="font-size:.78rem">— from nano-gpt.com → Settings → API</span>
 </div>
 
-<div id="modelrow">Model: <b id="modelname">…</b> <span id="modelprice"></span> <button id="modelchange" class="link">change</button></div>
+<div id="modelrow">Diff model: <b id="modelname">…</b> <span id="modelprice"></span> <button id="modelchange" class="link">change</button></div>
+<div class="dim" style="font-size:.8rem">smartapply: <b>xiaomi/mimo-v2.5-pro-ultraspeed</b> (fixed — fast &amp; mechanical)</div>
 <div id="modelpicker">
   <input id="modelsearch" placeholder="filter 600+ models, or type an exact id…" autocomplete="off" />
   <div id="modellist"></div>
-  <div class="dim" style="font-size:.75rem;margin-top:.3rem"><span id="modelcount"></span> · top = priciest new flagship per provider (last 30d) · price = $ in / $ out per 1M · Enter to use exact text</div>
+  <div class="dim" style="font-size:.75rem;margin-top:.3rem"><span id="modelcount"></span> · top = each frontier lab's latest flagship · price = $ in / $ out per 1M · Enter to use exact text</div>
 </div>
 
 <label for="path">File path</label>
@@ -96,10 +97,11 @@ import { buildEnvironment, generateDiff, smartapply, parseDiffPerFile, callLlmFo
   from "https://esm.sh/gh/255BITS/gptdiff-js";
 
 const DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
+const APPLY_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed"; // smartapply is locked to ultraspeed (fast, mechanical)
 const NANOGPT = "https://nano-gpt.com";
 const $ = (id) => document.getElementById(id);
 
-let MODEL = localStorage.getItem("ngpt_model") || DEFAULT_MODEL;
+let MODEL = localStorage.getItem("ngpt_model") || DEFAULT_MODEL; // the user-selectable DIFF model
 
 // NanoGPT canonicalizes the loopback host to "localhost"; start there so the OAuth
 // redirect returns to the same origin (keeping sessionStorage intact).
@@ -177,34 +179,30 @@ $("signout").addEventListener("click", () => { setKey(null); renderAuth(); });
 let allModels = null;     // [{ id, prompt, completion, owned_by, created }]  prices = USD per 1M
 let topOrder = new Map(); // id -> rank for the curated top list; everything else sorts below
 
-// What counts as a "frontier" (flagship) model family.
-const FRONTIER = [
-  "claude-opus", "claude-sonnet", "claude-haiku", "gpt-5", "chatgpt-4o", "gpt-4o", "o3", "o1",
-  "gemini-3", "gemini-2.5-pro", "gemini-2.0-pro", "gemini", "grok", "deepseek-r1", "deepseek-v3",
-  "deepseek", "llama-3.1-405b", "llama-3.3", "llama", "mistral-large", "qwen3", "qwen-max", "qwen",
+// Top list = each frontier lab's latest flagship (newest release matching the lab's
+// flagship line), excluding small/cheap variants. Only the major labs — no Llama,
+// Alibaba, Holo, fine-tunes, or smaller models.
+const LABS = [
+  ["OpenAI", /^openai\/(gpt-[0-9]|o[1-9])/i],
+  ["Anthropic", /claude-(opus|sonnet)/i],
+  ["Google", /gemini[0-9.\-]*-pro|gemini-pro/i],
+  ["xAI", /grok-[0-9]/i],
+  ["DeepSeek", /deepseek-(r1|v3|v4|chat)/i],
+  ["Qwen", /qwen[0-9.]*-max/i],
+  ["Mistral", /mistral-large/i],
 ];
-const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
-const isFrontier = (id) => { const lo = id.toLowerCase(); return FRONTIER.some((f) => lo.includes(f)); };
-const score = (m) => (m.prompt || 0) + (m.completion || 0);
-const providerOf = (m) => m.owned_by || m.id.split("/")[0];
+// Exclude small/cheap/variant rows. \bmini\b avoids matching "geMINI".
+const SMALL = /flash|nano|\blite\b|\bmini\b|-mini|\bsmall\b|tiny|oss|guard|preview|search|codex|:(low|medium|high|thinking)|cheaper|multi-agent|-\d+b\b|a\d+b\b|^tee\//i;
 const px = (x) => (x == null ? null : "$" + Number(x).toFixed(2));
 const priceOf = (id) => (allModels || []).find((m) => m.id === id);
 
-// Top list = the most expensive frontier model from each provider, added in the last month.
-function computeTop(now) {
-  const better = (m, c) => { // tie-break: prefer clean id (no :suffix), then newer, then shorter
-    const ac = m.id.includes(":"), bc = c.id.includes(":");
-    if (ac !== bc) return !ac;
-    if ((m.created || 0) !== (c.created || 0)) return (m.created || 0) > (c.created || 0);
-    return m.id.length < c.id.length;
-  };
-  const best = new Map(); // provider -> model
-  for (const m of allModels) {
-    if (!isFrontier(m.id) || !m.created || now - m.created * 1000 > MONTH_MS) continue;
-    const p = providerOf(m), cur = best.get(p);
-    if (!cur || score(m) > score(cur) || (score(m) === score(cur) && better(m, cur))) best.set(p, m);
+function computeTop() {
+  const picks = [];
+  for (const [, re] of LABS) {
+    const m = allModels.filter((x) => re.test(x.id) && !SMALL.test(x.id)).sort((a, b) => (b.created || 0) - (a.created || 0))[0];
+    if (m) picks.push(m);
   }
-  const picks = [...best.values()].sort((a, b) => score(b) - score(a) || a.id.localeCompare(b.id));
+  picks.sort((a, b) => (b.created || 0) - (a.created || 0)); // most recent flagship first
   topOrder = new Map(picks.map((m, i) => [m.id, i]));
 }
 const rank = (id) => (topOrder.has(id) ? topOrder.get(id) : 1e9);
@@ -224,7 +222,7 @@ async function loadModels() {
   } catch { /* ignore */ }
   allModels = arr.map((m) => ({ id: m.id, prompt: m.pricing?.prompt, completion: m.pricing?.completion, owned_by: m.owned_by, created: m.created })).filter((m) => m.id);
   if (!allModels.length) allModels = [{ id: DEFAULT_MODEL }]; // fallback; custom ids still typeable
-  computeTop(Date.now());
+  computeTop();
   allModels.sort((a, b) => (rank(a.id) - rank(b.id)) || a.id.localeCompare(b.id));
   setModel(MODEL); // refresh the row's price now that we have data
   return allModels;
@@ -353,8 +351,8 @@ async function run() {
   const timer = setInterval(() => { $("elapsed").textContent = ((performance.now() - t0) / 1000).toFixed(1); }, 100);
 
   try {
-    const opts = { apiKey: key, model: MODEL };
-    const diff = await generateDiff(buildEnvironment(files), $("goal").value, { ...opts, callLlm: streamingCallLlm("Generating diff") });
+    // Diff uses the selected model; smartapply is locked to ultraspeed (fast, mechanical).
+    const diff = await generateDiff(buildEnvironment(files), $("goal").value, { apiKey: key, model: MODEL, callLlm: streamingCallLlm("Generating diff") });
     const parsed = parseDiffPerFile(diff);
     if (!diff.trim() || !parsed.length) {
       renderDiff(diff || "");
@@ -362,7 +360,8 @@ async function run() {
     } else {
       const applyLlm = streamingCallLlm("Applying diff");
       const updated = await smartapply(diff, files, {
-        ...opts, callLlmForApply: (p, o, d, m, o2) => callLlmForApply(p, o, d, m, { ...o2, callLlm: applyLlm }),
+        apiKey: key, model: APPLY_MODEL,
+        callLlmForApply: (p, o, d, m, o2) => callLlmForApply(p, o, d, m, { ...o2, callLlm: applyLlm }),
       });
       renderDiff(diff);
       newContent = updated[path] ?? "(file was deleted)";
