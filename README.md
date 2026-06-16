@@ -36,10 +36,14 @@ NanoGPT's in-browser OAuth PKCE flow is currently blocked by a `form-action 'sel
 their `/oauth/authorize` endpoint (full writeup + repro in [`nanogpt-bug-report.md`](./nanogpt-bug-report.md)).
 Until that's fixed we authenticate with a plain API key read from the environment.
 
-Auth is isolated in **`auth.mjs`** so it's a one-line swap later:
+Auth is isolated in **`auth.mjs`**:
 
-- **`auth.mjs`** — `getApiKey()`; default reads `NANOGPT_API_KEY`. Nothing else knows how the key was obtained.
-- **`auth-oauth.mjs`** — the full PKCE loopback flow, kept ready. Set `NANOGPT_AUTH=oauth` to re-enable it.
+- **`auth.mjs`** — `getApiKey()`; precedence is OAuth runtime key → `NANOGPT_AUTH=oauth` → `NANOGPT_API_KEY`.
+- **In-page sign-in** — the header has a **Sign in with NanoGPT** link. It runs browser-side PKCE and
+  posts the code to `POST /api/auth/exchange`; the server exchanges it and holds the key in memory, so
+  the badge swaps to *via OAuth ✓* and the OAuth key is used instead of the env key. Serve over a
+  loopback IP (`http://127.0.0.1:8787`, not `localhost`) — NanoGPT requires it; the page auto-corrects.
+- **`auth-oauth.mjs`** — the server-side PKCE loopback flow (terminal), used when `NANOGPT_AUTH=oauth`.
 
 ## Setup
 

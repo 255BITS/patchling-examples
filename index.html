@@ -10,6 +10,7 @@
   header { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap; }
   h1 { font-size: 1.15rem; margin: 0; flex: 1; }
   #status { font-size: .78rem; opacity: .6; }
+  #authlink { font-size: .78rem; }
   label { display: block; font-size: .8rem; opacity: .7; margin: .8rem 0 .2rem; }
   input, textarea { width: 100%; box-sizing: border-box; font: inherit; padding: .5rem; border-radius: .5rem; border: 1px solid #8888; }
   textarea { font-family: ui-monospace, monospace; font-size: 13px; }
@@ -32,6 +33,7 @@
 <header>
   <h1>gptdiff · diff → smartapply</h1>
   <span id="status">via local proxy</span>
+  <a id="authlink" href="#">Sign in with NanoGPT</a>
 </header>
 
 <label for="path">File path</label>
@@ -65,6 +67,74 @@
 const $ = (id) => document.getElementById(id);
 const runBtn = $("run"), acceptBtn = $("accept");
 let newContent = null;
+
+// ---- OAuth (browser-side PKCE; the server exchanges the code & holds the key) ----
+// NanoGPT requires a loopback IP, not "localhost".
+if (location.hostname === "localhost") location.hostname = "127.0.0.1";
+const REDIRECT_URI = location.origin + "/";
+const b64url = (b) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const rand = (n) => b64url(crypto.getRandomValues(new Uint8Array(n)));
+const sha256url = async (s) => b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
+
+async function clientId() {
+  const cached = JSON.parse(localStorage.getItem("ngpt_client") || "null");
+  if (cached && cached.redirect === REDIRECT_URI) return cached.id;
+  const r = await fetch("https://nano-gpt.com/oauth/register", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client_name: "gptdiff local", redirect_uris: [REDIRECT_URI],
+      grant_types: ["authorization_code"], response_types: ["code"], token_endpoint_auth_method: "none" }),
+  });
+  if (!r.ok) throw new Error("register " + r.status);
+  const id = (await r.json()).client_id;
+  localStorage.setItem("ngpt_client", JSON.stringify({ id, redirect: REDIRECT_URI }));
+  return id;
+}
+
+async function signIn() {
+  const id = await clientId();
+  const verifier = rand(32), state = rand(16);
+  sessionStorage.setItem("pkce", JSON.stringify({ verifier, state, id }));
+  const u = new URL("https://nano-gpt.com/oauth/authorize");
+  u.search = new URLSearchParams({
+    response_type: "code", client_id: id, redirect_uri: REDIRECT_URI,
+    scope: "api.use models.read", state,
+    code_challenge: await sha256url(verifier), code_challenge_method: "S256",
+  }).toString();
+  location.assign(u.toString());
+}
+
+// On return from consent: send the code to the server to exchange & store.
+async function handleRedirect() {
+  const p = new URLSearchParams(location.search);
+  if (!p.has("code") && !p.has("error")) return;
+  history.replaceState({}, "", REDIRECT_URI);
+  const saved = JSON.parse(sessionStorage.getItem("pkce") || "null");
+  sessionStorage.removeItem("pkce");
+  if (p.get("error")) throw new Error(p.get("error"));
+  if (!saved || p.get("state") !== saved.state) throw new Error("state mismatch");
+  const r = await fetch("/api/auth/exchange", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: p.get("code"), code_verifier: saved.verifier, client_id: saved.id, redirect_uri: REDIRECT_URI }),
+  });
+  if (!r.ok) throw new Error("exchange failed: " + (await r.text()));
+}
+
+async function refreshAuth() {
+  const mode = (await fetch("/api/auth").then((r) => r.json()).catch(() => ({}))).mode;
+  const signedIn = mode === "oauth";
+  $("status").textContent = signedIn ? "via OAuth ✓" : "via local proxy";
+  $("authlink").textContent = signedIn ? "" : "Sign in with NanoGPT";
+}
+
+$("authlink").addEventListener("click", (e) => {
+  e.preventDefault();
+  signIn().catch((err) => { $("status").textContent = "sign-in error: " + err.message; });
+});
+
+(async () => {
+  try { await handleRedirect(); } catch (e) { $("status").textContent = "sign-in error: " + e.message; }
+  refreshAuth();
+})();
 
 function renderDiff(diff) {
   $("diff").innerHTML = "";

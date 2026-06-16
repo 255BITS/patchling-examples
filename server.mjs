@@ -11,7 +11,9 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, normalize } from "node:path";
 import { buildEnvironment, generateDiff, smartapply, callLlmForApply } from "gptdiff-js";
-import { getApiKey } from "./auth.mjs";
+import { getApiKey, setRuntimeKey, authStatus } from "./auth.mjs";
+
+const NANOGPT = "https://nano-gpt.com";
 
 const MODEL = process.env.NANOGPT_MODEL || "xiaomi/mimo-v2.5-pro-ultraspeed";
 const PORT = Number(process.env.PORT || 8787);
@@ -21,12 +23,37 @@ const TYPES = { ".html": "text/html", ".css": "text/css", ".js": "text/javascrip
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === "POST" && req.url === "/api/chat") return await chat(req, res);
+    if (req.method === "GET" && req.url === "/api/auth") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ mode: authStatus() }));
+    }
+    if (req.method === "POST" && req.url === "/api/auth/exchange") return await authExchange(req, res);
     return await serveStatic(req, res);
   } catch (e) {
     if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: e.message }));
   }
 });
+
+// Browser-side PKCE hands us the code; we exchange it for a key and hold it in memory,
+// so the OAuth key — not the env key — is used from here on.
+async function authExchange(req, res) {
+  const { code, code_verifier, client_id, redirect_uri } = JSON.parse((await readBody(req)) || "{}");
+  if (!code || !code_verifier || !client_id || !redirect_uri) throw new Error("missing PKCE fields");
+  const r = await fetch(`${NANOGPT}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code", client_id, redirect_uri, code, code_verifier }),
+  });
+  if (!r.ok) {
+    res.writeHead(r.status, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ error: await r.text() }));
+  }
+  setRuntimeKey((await r.json()).access_token);
+  console.log("Signed in via OAuth ✓");
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ ok: true, mode: "oauth" }));
+}
 
 // gptdiff flow, streamed: diff the existing files against the goal, smartapply, return new files.
 //   request:  { goal: string, files: { [path]: content } }
