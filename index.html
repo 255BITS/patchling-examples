@@ -131,7 +131,27 @@ $("authlink").addEventListener("click", (e) => {
   signIn().catch((err) => { $("status").textContent = "sign-in error: " + err.message; });
 });
 
+// Is this page actually served by our Node proxy (which has /api/auth)? A static
+// server like `npx serve` will fail this — and OAuth can't work there.
+async function servedByUs() {
+  try {
+    const r = await fetch("/api/auth");
+    return r.ok && typeof (await r.json()).mode === "string";
+  } catch { return false; }
+}
+
 (async () => {
+  if (!(await servedByUs())) {
+    document.body.innerHTML =
+      '<div style="font:16px/1.6 system-ui;max-width:640px;margin:3rem auto;padding:1rem">' +
+      '<h2>⚠ Wrong server</h2>' +
+      '<p>This page must be served by the gptdiff Node proxy (<code>npm start</code>), not a static ' +
+      'server like <code>npx serve</code>. OAuth needs the <code>/api/auth/exchange</code> route, ' +
+      'which only the Node server has.</p>' +
+      '<p>You are on <b>' + location.origin + '</b>. Stop the static server, run <code>npm start</code>, ' +
+      'and open the URL it prints — <b>http://127.0.0.1:8787</b>.</p></div>';
+    return;
+  }
   try { await handleRedirect(); } catch (e) { $("status").textContent = "sign-in error: " + e.message; }
   refreshAuth();
 })();

@@ -151,7 +151,8 @@ function readBody(req) {
 }
 
 async function serveStatic(req, res) {
-  const rel = req.url === "/" ? "/index.html" : req.url.split("?")[0];
+  const pathname = req.url.split("?")[0]; // drop ?query (OAuth returns to /?code=...)
+  const rel = pathname === "/" ? "/index.html" : pathname;
   const path = join(ROOT, normalize(rel).replace(/^(\.\.[/\\])+/, "")); // prevent traversal
   try {
     const data = await readFile(path);
