@@ -82,52 +82,36 @@
 <input id="path" value="index.html" />
 
 <label for="content">Existing file — just notes &amp; pseudocode (let the AI build it)</label>
-<textarea id="content" rows="16"><!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>My Game</title>
-  <!-- NOTES
-    Build a small arcade game on a <canvas>, dark background, centered.
-    Keep it one self-contained file: inline <style> and <script>, no libraries.
-  -->
-</head>
-<body>
-  <!--
-    LAYOUT
-    - title + a score readout (#score)
-    - <canvas id="game" width="480" height="600">
-    - simple on-screen hint for the controls
-  -->
+<textarea id="content" rows="16">GAME PLAN — a small browser arcade game in one self-contained index.html.
 
-  <script>
-    // ===== PSEUDOCODE — not implemented yet =====
-    //
-    // STATE
-    //   player { x, y, w, h, speed }      // sits near the bottom
-    //   bullets[]                          // player shots, move up
-    //   enemies[] = grid of aliens         // rows x cols near the top
-    //   enemyDir = +1                      // march right, then flip + step down
-    //   score = 0, gameOver = false
-    //
-    // INPUT
-    //   ArrowLeft / ArrowRight -> move player
-    //   Space -> fire a bullet (rate-limited)
-    //
-    // EACH FRAME (requestAnimationFrame)
-    //   move player by input (clamp to canvas)
-    //   move bullets up; drop the ones off-screen
-    //   move enemy block horizontally; if it hits an edge, flip dir + step down
-    //   collisions: bullet vs enemy -> remove both, score += 10
-    //   lose if any enemy reaches the player's row
-    //   draw everything; draw "GAME OVER" when done
-    //
-    // TODO: turn the above into a real, playable game.
-  </script>
-</body>
-</html>
-</textarea>
-<button id="play" class="go" style="margin-top:.4rem">▶ Play this file</button>
+A canvas-based Space Invaders: dark background, centered, no libraries.
+
+LAYOUT
+  - a title and a score readout
+  - a game canvas, about 480 x 600
+  - a one-line hint for the controls
+
+STATE
+  - player: x, y, width, height, speed — sits near the bottom
+  - bullets: player shots that move up
+  - enemies: a grid of aliens near the top
+  - enemyDir: +1, march right then flip and step down
+  - score = 0, gameOver = false
+
+INPUT
+  - ArrowLeft / ArrowRight move the player
+  - Space fires a bullet (rate-limited)
+
+EACH FRAME (requestAnimationFrame)
+  - move the player from input, clamped to the canvas
+  - move bullets up, drop the ones off-screen
+  - move the enemy block; at an edge, flip direction and step down
+  - bullet hits an enemy: remove both, score += 10
+  - lose if any enemy reaches the player's row
+  - draw everything; show GAME OVER when done
+
+TODO: turn this plan into a real, playable game.</textarea>
+<button id="play" class="go" style="margin-top:.4rem" disabled>▶ Play (build it first)</button>
 
 <label for="goal">Goal (what to change)</label>
 <input id="goal" value="Implement these notes as a fully playable Space Invaders: a ship that moves with arrow keys and shoots with space, rows of aliens that march and drop, bullet-vs-alien collisions, a score, and a game-over state." />
@@ -498,17 +482,27 @@ async function run() {
 }
 
 $("run").addEventListener("click", run);
-$("accept").addEventListener("click", () => { if (newContent != null) { $("content").value = newContent; $("accept").disabled = true; } });
+$("accept").addEventListener("click", () => { if (newContent != null) { $("content").value = newContent; $("accept").disabled = true; updatePlayState(); } });
 
 // ---------- play modal: render the current file in a sandboxed iframe ----------
 const playModal = $("playmodal"), playFrame = $("playframe");
+// The file starts as pseudocode; Play only makes sense once it's a built HTML game.
+const looksLikeHtml = (s) => /<!doctype/i.test(s) || /<\/?(html|head|body|script|canvas|svg|div|main|style|h1|button)\b/i.test(s);
+function updatePlayState() {
+  const ok = looksLikeHtml($("content").value);
+  $("play").disabled = !ok;
+  $("play").textContent = ok ? "▶ Play this file" : "▶ Play (build it first)";
+  $("play").title = ok ? "" : "This file is still pseudocode — run “Diff & apply” to build the game, accept it, then Play.";
+}
 function openPlay() {
+  if ($("play").disabled) return;
   // Focus the game so arrow keys work immediately — no clicking needed.
   playFrame.onload = () => { try { playFrame.contentWindow.focus(); } catch {} };
   playFrame.srcdoc = $("content").value;
   playModal.classList.add("open");
   playFrame.focus();
 }
+$("content").addEventListener("input", updatePlayState);
 function closePlay() { playModal.classList.remove("open"); playFrame.srcdoc = ""; }
 $("play").addEventListener("click", openPlay);
 $("playclose").addEventListener("click", closePlay);
@@ -520,6 +514,7 @@ addEventListener("keydown", (e) => { if (e.key === "Escape" && playModal.classLi
   renderModelRow("diff"); renderModelRow("apply");
   try { await handleRedirect(); } catch (e) { $("status").textContent = "sign-in error: " + e.message; }
   renderAuth();
+  updatePlayState();
   loadModels(); // populate prices/tags (and warm the picker) in the background
 })();
 </script>
