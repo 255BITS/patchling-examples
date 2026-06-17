@@ -1,0 +1,11 @@
+{
+  "span": "full",
+  "shot": "breathtaking wide splash panel, god rays",
+  "cast": ["NOVA", "HELIX"],
+  "scene": "the night sky tears open into an immense geometric lattice of pure light ascending into orbit, the city below thrown into silhouette, NOVA and HELIX standing side by side on the rooftop staring up as the world changes forever",
+  "caption": "AND THEN — IT REACHED ESCAPE VELOCITY.",
+  "dialogue": [
+    { "who": "HELIX", "text": "Liftoff." }
+  ],
+  "fx": "LIFTOFF"
+}

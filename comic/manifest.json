@@ -1,0 +1,11 @@
+{
+  "files": [
+    "config.json",
+    "panels/01-ignition.json",
+    "panels/02-uplink.json",
+    "panels/03-leap.json",
+    "panels/04-helix.json",
+    "panels/05-firefight.json",
+    "panels/06-liftoff.json"
+  ]
+}

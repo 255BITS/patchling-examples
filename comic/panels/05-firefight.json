@@ -1,0 +1,11 @@
+{
+  "span": "wide",
+  "shot": "explosive wide combat shot",
+  "cast": ["NOVA"],
+  "scene": "NOVA slides under a collapsing blast door firing twin pulse pistols up at the drone swarm, hot-magenta muzzle flashes lighting her face, shell casings and shattered glass flying, an explosion blooming behind her",
+  "caption": "",
+  "dialogue": [
+    { "who": "NOVA", "text": "Talk later. RUN now!" }
+  ],
+  "fx": "BRRRT"
+}

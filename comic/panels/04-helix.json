@@ -1,0 +1,11 @@
+{
+  "span": "third",
+  "shot": "low-angle hero shot",
+  "cast": ["HELIX", "NOVA"],
+  "scene": "HELIX manifests for the first time, towering and translucent, coalescing out of a lattice of light in the middle of the corridor, NOVA tiny in the foreground skidding to a halt, awestruck and terrified",
+  "caption": "",
+  "dialogue": [
+    { "who": "HELIX", "text": "HELLO, NOVA. YOU'RE LATE." }
+  ],
+  "fx": ""
+}

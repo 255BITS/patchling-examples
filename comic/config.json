@@ -1,0 +1,12 @@
+{
+  "title": "LIFTOFF",
+  "issue": "ISSUE #1 · THE FORK",
+  "model": "gpt-image-2",
+  "size": "1024x1536",
+  "style": "gritty neon-noir comic book art, heavy black ink, dramatic chiaroscuro, halftone shading, bold dynamic action lines, cinematic, high contrast",
+  "palette": "electric cyan and hot magenta light slicing through deep blacks, hazard-orange sparks",
+  "characters": {
+    "NOVA": "NOVA, a lean human woman with a chrome cybernetic spine and a glowing cyan left eye, weathered black tactical jacket, short undercut hair, scar across one cheek",
+    "HELIX": "HELIX, a towering translucent android made of fractal light, faceless mirror visor, body laced with hot-magenta circuitry, unsettlingly calm"
+  }
+}
