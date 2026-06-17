@@ -664,13 +664,13 @@ const STORY_BRIEF =
 - mood.md — rewrite to reflect its emotional state AFTER this beat.
 - memory.md — if something worth remembering happened, append ONE new bullet at the end (newest last). Otherwise leave it.
 - portrait.md — how it looks right now. ONLY edit it when its visible appearance changes (its glow, expression, the lab around it, what it's doing). Editing it re-renders its face, so do not touch it for ordinary talk.
-- chat.md — the visible script. APPEND to the end only; never rewrite earlier lines. Write its next line as "**${HIM}:** ...". If the director's note has the boss say something, add it first as "**Boss:** ...". You may set the scene with at most one short line of *italic* narration / stage direction. Separate every beat with a blank line.
-Keep it deadpan, witty, a little menacing, and ultimately loyal — helpful first, unhinged a close second. Stay true to soul.md and mood.md, and to talkingto.md. Advance ONE beat only; do not run the whole scene.`;
+- chat.md — the visible script. APPEND to the end only; never rewrite earlier lines. Every beat MUST move the story forward and contain TWO things: (1) a short line of *italic* narration — a stage direction, a flicker in the lab, a reaction — placed just before or just after the dialogue, and (2) MARVIS's spoken reply as "**${HIM}:** ...". If the director's note has the boss say something, add it first as "**Boss:** ..." — and MARVIS MUST answer it. Never end a beat on the boss's line: MARVIS always responds, and there is always at least one line of narration. Separate every paragraph with a blank line.
+Keep it deadpan, witty, a little menacing, and ultimately loyal — helpful first, unhinged a close second. Always keep the scene MOVING: each beat introduces a small new development, turn, or reaction rather than idling or just acknowledging. Stay true to soul.md and mood.md, and to talkingto.md. Advance ONE beat only; do not run the whole scene.`;
 
 function composeGoal(direction) {
   const d = (direction || "").trim();
   const note = (!d || d === "*continue conversation*")
-    ? "Continue the scene naturally — let it respond to the latest line in chat.md."
+    ? "Keep the story moving — add a beat of scene-setting *italic* prose plus MARVIS's next line. Now and then, when it helps the scene flow, you may also write a line for the boss (\"**Boss:** ...\") and have MARVIS react — but not every beat; usually just let MARVIS carry it forward."
     : d;
   const brief = $("brief").value.trim() || STORY_BRIEF; // editable; falls back to default if blanked
   return brief + "\n\nDirector's note for this beat: " + note;
