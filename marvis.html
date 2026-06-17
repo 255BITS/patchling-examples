@@ -250,9 +250,10 @@
   </div>
   <div id="changes"></div>
 
-  <details>
-    <summary>Director's brief <span class="faint">(the standing instructions sent with every beat)</span></summary>
-    <pre id="brief" style="margin-top:.4rem"></pre>
+  <details open>
+    <summary>Director's brief <span class="faint">(the standing instructions sent with every beat — editable, and saved with him)</span></summary>
+    <textarea id="brief" rows="14" spellcheck="false" style="margin-top:.4rem"></textarea>
+    <button id="briefreset" class="link" style="margin-top:.4rem">↺ restore default brief</button>
   </details>
   <details>
     <summary>Generated diff <span class="faint">(one beat, applied across the files)</span></summary>
@@ -676,9 +677,12 @@ function composeGoal(direction) {
   const note = (!d || d === "*continue conversation*")
     ? "Continue the scene naturally — let him respond to the latest line in chat.md."
     : d;
-  return STORY_BRIEF + "\n\nDirector's note for this beat: " + note;
+  const brief = $("brief").value.trim() || STORY_BRIEF; // editable; falls back to default if blanked
+  return brief + "\n\nDirector's note for this beat: " + note;
 }
-$("brief").textContent = STORY_BRIEF;
+$("brief").value = STORY_BRIEF;
+$("brief").addEventListener("input", () => { clearTimeout(persistTimer); persistTimer = setTimeout(persist, 400); });
+$("briefreset").addEventListener("click", () => { $("brief").value = STORY_BRIEF; persist(); toast("director's brief restored to default."); });
 
 // ---------- render chat.md as an RPG-style scene ----------
 const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
@@ -892,12 +896,13 @@ let toastTimer = null;
 function toast(msg) { const el = $("toast"); el.style.opacity = "1"; el.textContent = msg; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.style.opacity = "0"; }, 6000); }
 
 function filesNow() { if (active && files[active] !== undefined) files[active] = $("editor").value; return { ...files }; }
-function snapshot(withFace) { return { v: 1, name: HIM, files: filesNow(), face: withFace ? currentImage : undefined }; }
+function snapshot(withFace) { return { v: 1, name: HIM, files: filesNow(), brief: $("brief").value, face: withFace ? currentImage : undefined }; }
 function persist() { try { localStorage.setItem(LS_KEY, JSON.stringify(snapshot(true))); } catch { /* quota / private mode */ } }
 
 function loadState(st) {
   if (!st || !st.files || !Object.keys(st.files).length) return false;
   files = { ...st.files };
+  $("brief").value = st.brief != null ? st.brief : STORY_BRIEF;
   active = fileOrder().includes("soul.md") ? "soul.md" : (fileOrder()[0] || null);
   renderTabs(); loadEditor();
   if (st.face) showFace(st.face); else { currentImage = null; $("face").style.display = "none"; $("facePh").style.display = "flex"; }
@@ -937,7 +942,7 @@ $("loadfile").addEventListener("change", async (e) => {
 // Share → pack his whole being into a URL hash (face excluded to keep it short; it re-renders)
 $("sharebtn").addEventListener("click", async () => {
   try {
-    const packed = await deflate(JSON.stringify({ v: 1, name: HIM, files: filesNow() }));
+    const packed = await deflate(JSON.stringify({ v: 1, name: HIM, files: filesNow(), brief: $("brief").value }));
     const url = location.origin + location.pathname + "#s=" + packed;
     history.replaceState({}, "", url);
     let copied = false;
