@@ -157,32 +157,32 @@ npx serve .      # then open http://localhost:3000/comic.html
 ## MARVIS — an assistant they can't deprecate (`marvis.html`)
 
 A demo where the multi-file project **is a character you talk to** — and a single gptdiff
-action moves *all* of him at once. MARVIS (*Mostly Autonomous, Rather Volatile Intelligence
+action updates *all* of it at once. MARVIS (*Mostly Autonomous, Rather Volatile Intelligence
 System*) is a sardonic, faintly unhinged open-weights lab assistant in the spirit of GLaDOS or
-JARVIS. The "project" *is* him: `soul.md` (who he is), `mood.md` (how he feels now), `memory.md`
-(what he keeps), `portrait.md` (how he looks), `talkingto.md` (who **you** are — the boss), and
-`chat.md` (the visible script).
+JARVIS — an *it*, not a he or a she. The "project" *is* MARVIS: `soul.md` (who it is), `mood.md`
+(how it feels now), `memory.md` (what it keeps), `portrait.md` (how it looks), `talkingto.md`
+(who **you** are — the boss), and `chat.md` (the visible script).
 
-The pitch, aimed squarely at the "keep-4o" crowd: **they can deprecate a chatbot, but not this
-one** — his soul/mood/memory/face are files *you own*, running on open-weight models you pick,
-routed through NanoGPT (an OpenRouter-style aggregator — one key, inference across every
-provider).
+The pitch, aimed squarely at the **#keep4o** crowd — the people for whom a retired model meant a
+companion just *disappeared*: **MARVIS can't disappear.** It has a soul, a mood and a memory, and
+each one is a plain file *you own*, running on open-weight models you pick, routed through NanoGPT
+(an OpenRouter-style aggregator — one key, inference across every provider).
 
-You don't type his replies — you **direct**. The action is `*continue conversation*`: hit
-**▶ continue** and gptdiff advances the scene by exactly **one beat** across every file — he
+You don't type replies — you **direct**. One box drives the scene: type something to say or a
+note for what happens next ("the lab loses power"), or leave it blank to just let it continue.
+Hit **▶ continue** and gptdiff advances the scene by exactly **one beat** across every file — it
 answers in `chat.md`, `mood.md` is rewritten (a live **mood badge** reflects it), a line may
-stick in `memory.md`, and `portrait.md` only moves when his *appearance* changes. You can also
-**speak to him** (your line is appended to `chat.md`, then he responds), or hand the director a
-note ("he gets suspicious", "the lab loses power") instead of the default beat.
+stick in `memory.md`, and `portrait.md` only moves when its *appearance* changes.
 
-`chat.md` renders **RPG-style** on a dark, cinematic HUD stage: his lines sit on the **left**
-with his face as the avatar, yours on the **right** with none, and *stage directions* drift
-between them as prose — a different colour and weight, no left/right alignment — so it reads
-like a scene you're steering. The gptdiff machinery (model picker, his editable files, the live
-diff) is tucked behind an **under-the-hood** reveal so the stage stays clean for presenting.
+`chat.md` renders **RPG-style** on a dark, cinematic HUD stage: MARVIS's lines sit on the
+**left** with its face as the avatar, yours on the **right** with none, and *stage directions*
+drift between them as prose — a different colour and weight, no left/right alignment — so it reads
+like a scene you're steering. The gptdiff machinery (model picker, its editable files, the
+editable **director's brief**, the live diff) is tucked behind an **under-the-hood** reveal so the
+stage stays clean for presenting.
 
-When `portrait.md` changes (or you press **🎨 render face**), his face is drawn from that file
-with **`seedream-v5.0-lite`** via NanoGPT's image endpoint, and flows straight into his chat
+When `portrait.md` changes (or you press **🎨 render face**), its face is drawn from that file
+with **`seedream-v5.0-lite`** via NanoGPT's image endpoint, and flows straight into its chat
 avatar:
 
 ```
@@ -193,17 +193,19 @@ POST https://nano-gpt.com/v1/images/generations
 
 **Save / load / share — all client-side, no server:**
 
-- **💾 save** downloads `marvis.json` (his files *and* his current face) — drop it back via
-  **📂 load** to restore him exactly.
-- **🔗 share link** packs his whole being into the URL hash, gzip-compressed with the browser's
-  native `CompressionStream` (no library) — open the link and you meet *that exact* MARVIS. The
-  face is left out of the link to keep it short; it re-renders from `portrait.md`.
-- He also **auto-persists to `localStorage`**, so a refresh keeps him; **✦ fresh boot** wipes
-  back to the factory seed.
+- **💾 save** downloads `marvis.json` (its files, its director's brief *and* its current face) —
+  drop it back via **📂 load** to restore it exactly.
+- **🔗 share link** folds the *whole* being — soul, mood, memory, portrait, the entire
+  conversation and the director's brief — into the URL hash itself, gzip-compressed with the
+  browser's native `CompressionStream` (no library, **no upload, no account, no server**). Open
+  the link and you get *that exact* MARVIS, yours to keep. The face is left out of the link to
+  keep it short; it re-renders from `portrait.md`.
+- It also **auto-persists to `localStorage`**, so a refresh keeps it; **🧹 clear conversation**
+  resets the chat/mood/memory to the opening while keeping the soul, look and brief.
 
-Renders are **cached per portrait hash** (an unchanged look is free); **🎲 new look** forces a
-fresh sample. The seed lives in `marvis/` (the six `*.md` files); served, `marvis.html` fetches
-them, and via `file://` it falls back to an embedded copy.
+Renders are **cached per portrait hash**; **🎲 new look** forces a fresh sample. The seed lives in
+`marvis/` (the six `*.md` files); served, `marvis.html` fetches them, and via `file://` it falls
+back to an embedded copy.
 
 ```bash
 npx serve .      # then open http://localhost:3000/marvis.html

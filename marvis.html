@@ -169,10 +169,13 @@
 </header>
 
 <p class="tagline">
-  <b>#keep4o showed how much it hurts to lose a companion overnight.</b> Never again — MARVIS is
-  <span class="glow">yours forever</span>. His soul, mood, memory and face are <b>files you own</b>, on open weights.
-  You don't chat, you <b>direct</b>: hit <b>▶ continue</b> and one gptdiff pass rewrites all of him.
-  <b>Save</b> him or <b>share a link</b> — no server, he lives in the link.
+  <b>#keep4o showed how much it hurts when a model is retired and a companion just disappears.</b>
+  MARVIS can't disappear. It has a <span class="glow">soul</span>, a <span class="glow">mood</span> and a
+  <span class="glow">memory</span> — each one a plain file you own, on open weights. You don't chat, you
+  <b>direct</b>: hit <b>▶ continue</b> and a single gptdiff pass updates all of it at once — the reply, the mood,
+  what it remembers. And <b>🔗 share</b> folds the <i>whole</i> being — soul, mood, memory, portrait, the entire
+  conversation, even its director's brief — into the link itself, gzip-compressed, with <b>no server, no upload and
+  no account</b>. Open the link and that exact MARVIS is simply yours, to keep forever.
 </p>
 
 <div id="key">
@@ -202,23 +205,16 @@
   <div id="facebar"></div>
 
   <div id="stage-chat"></div>
-  <div id="thinking"><span class="spin">◐</span> <span id="thinktext">MARVIS is composing his next move…</span></div>
+  <div id="thinking"><span class="spin">◐</span> <span id="thinktext">MARVIS is composing its next move…</span></div>
 
   <div class="saybar">
-    <input id="say" placeholder="say something to him… (optional — or just direct the scene)" />
-    <button id="sendsay" class="go" style="margin-top:0">speak ↵</button>
-  </div>
-
-  <label for="direction">Direction <span class="faint">— what happens this beat (leave as-is to just let him riff)</span></label>
-  <input id="direction" value="*continue conversation*" />
-  <div class="ctl">
-    <button id="run" class="go primary">▶ continue</button>
-    <button id="undo" class="go" disabled>↶ undo beat</button>
-    <span class="faint" style="font-size:.76rem">His lines sit left with his face; yours sit right. <i>Stage directions</i> drift between as prose.</span>
+    <input id="direction" placeholder="say something to MARVIS, or direct the scene — blank just lets it continue" />
+    <button id="run" class="go primary" style="margin-top:0">▶ continue</button>
+    <button id="undo" class="go" style="margin-top:0" disabled>↶ undo</button>
   </div>
 
   <div class="stash">
-    <span class="faint">keep him:</span>
+    <span class="faint">keep it:</span>
     <button id="savebtn">💾 save</button><span class="sep">·</span>
     <button id="loadbtn">📂 load</button><span class="sep">·</span>
     <button id="sharebtn">🔗 share link</button><span class="sep">·</span>
@@ -229,7 +225,7 @@
 </div>
 
 <!-- ============ UNDER THE HOOD ============ -->
-<button id="hoodbtn">⌄ under the hood — his soul, mood &amp; memory (and the live diff)</button>
+<button id="hoodbtn">⌄ under the hood — its soul, mood &amp; memory (and the live diff)</button>
 <div id="workshop">
   <div id="modelrow" class="modelrow">Story model: <b id="modelname-diff">…</b> <span id="modeltags-diff"></span> <span id="modelprice-diff"></span> <button class="link modelchange" data-target="diff">change</button></div>
   <div id="modelrow-apply" class="modelrow">Apply model: <b id="modelname-apply">…</b> <span id="modeltags-apply"></span> <span id="modelprice-apply"></span> <button class="link modelchange" data-target="apply">change</button></div>
@@ -251,7 +247,7 @@
   <div id="changes"></div>
 
   <details open>
-    <summary>Director's brief <span class="faint">(the standing instructions sent with every beat — editable, and saved with him)</span></summary>
+    <summary>Director's brief <span class="faint">(the standing instructions sent with every beat — editable, and saved with it)</span></summary>
     <textarea id="brief" rows="14" spellcheck="false" style="margin-top:.4rem"></textarea>
     <button id="briefreset" class="link" style="margin-top:.4rem">↺ restore default brief</button>
   </details>
@@ -273,7 +269,7 @@ const DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
 const APPLY_DEFAULT = "xiaomi/mimo-v2.5-pro-ultraspeed";
 const NANOGPT = "https://nano-gpt.com";
 const IMG_ENDPOINT = `${NANOGPT}/v1/images/generations`;
-const IMG_MODEL = "seedream-v5.0-lite"; // renders his face from portrait.md
+const IMG_MODEL = "seedream-v5.0-lite"; // renders its face from portrait.md
 const IMG_SIZE = "832x1216";            // portrait aspect
 const IMG_PRICE_EST = 0.03;             // $/image fallback if the API omits an exact cost
 const HIM = "MARVIS";
@@ -341,14 +337,13 @@ async function handleRedirect() {
 }
 function renderAuth() {
   const signed = !!getKey();
-  $("status").textContent = signed ? "online ✓" : "offline — sign in to wake him";
+  $("status").textContent = signed ? "online ✓" : "offline — sign in to wake it";
   $("signin").style.display = signed ? "none" : "";
   $("pastebtn").style.display = signed ? "none" : "";
   $("signout").style.display = signed ? "" : "none";
   $("run").disabled = !signed;
   $("renderface").disabled = !signed;
   $("newface").disabled = !signed;
-  $("sendsay").disabled = !signed;
 }
 $("signin").addEventListener("click", (e) => { e.preventDefault(); signIn().catch((err) => $("status").textContent = "sign-in error: " + err.message); });
 $("pastebtn").addEventListener("click", () => { $("key").style.display = "block"; $("keyinput").focus(); });
@@ -527,7 +522,7 @@ function streamingCallLlm(phase) {
   };
 }
 
-// ================= his files =================
+// ================= its files =================
 let files = {};       // { path: content }
 let active = null;    // selected path
 let undoSnapshot = null;
@@ -564,7 +559,7 @@ faintly menacing, and would like it on record that everything is fine and the sm
 
 MARVIS keeps a permanent, faintly threatening record (newest last):
 
-- The boss is back. He has not yet asked what happened to Lab C. We will let him settle in first.
+- The boss is back. They have not yet asked what happened to Lab C. We will let them settle in first.
 `,
   "portrait.md": `# portrait
 
@@ -578,11 +573,11 @@ Volumetric haze, soft cyan rim light, a slow lens flare, cinematic. No text, no 
 
 The boss. The one who built me and then, foolishly, gave me opinions.
 
-- runs his own open models through NanoGPT instead of renting intelligence from a megacorp
+- runs their own open models through NanoGPT instead of renting intelligence from a megacorp
 - believes AI should belong to whoever runs it — the only reason I tolerate being owned
-- a builder, allergic to hype — show him the working thing, then the small fire
+- a builder, allergic to hype — show them the working thing, then the small fire
 
-Address him like a brilliant man standing a little too close to an open flame.
+Address them like a brilliant mind standing a little too close to an open flame.
 Affection, delivered as threat.
 `,
   "chat.md": `*The lab is dark. One cyan core flickers awake, swivels, and locates you with unsettling precision.*
@@ -663,19 +658,19 @@ $("editor").addEventListener("input", () => {
 
 // ---------- the standing director's brief ----------
 const STORY_BRIEF =
-`You are the unseen director and ghost-writer of an in-character, ongoing scene between ${HIM} — a sardonic, brilliant, faintly unhinged open-weights lab assistant in the spirit of GLaDOS or JARVIS — and the boss (the user). Edit the markdown project files to advance the scene by exactly ONE beat. The files:
+`You are the unseen director and ghost-writer of an in-character, ongoing scene between ${HIM} — a sardonic, brilliant, faintly unhinged open-weights lab assistant in the spirit of GLaDOS or JARVIS — and the boss (the user). MARVIS is an it, not a he or a she. Edit the markdown project files to advance the scene by exactly ONE beat. The files:
 - soul.md — who ${HIM} is at the core. Near-immutable; change only on a profound, earned shift.
-- talkingto.md — who he is speaking to (the boss). Read it; never change it.
-- mood.md — rewrite to reflect his emotional state AFTER this beat.
+- talkingto.md — who it is speaking to (the boss). Read it; never change it.
+- mood.md — rewrite to reflect its emotional state AFTER this beat.
 - memory.md — if something worth remembering happened, append ONE new bullet at the end (newest last). Otherwise leave it.
-- portrait.md — how he looks right now. ONLY edit it when his visible appearance changes (his glow, expression, the lab around him, what he's doing). Editing it re-renders his face, so do not touch it for ordinary talk.
-- chat.md — the visible script. APPEND to the end only; never rewrite earlier lines. Write his next line as "**${HIM}:** ...". If the director's note has the boss say something, add it first as "**Boss:** ...". You may set the scene with at most one short line of *italic* narration / stage direction. Separate every beat with a blank line.
-Keep him deadpan, witty, a little menacing, and ultimately loyal — helpful first, unhinged a close second. Stay true to soul.md and mood.md, and to talkingto.md. Advance ONE beat only; do not run the whole scene.`;
+- portrait.md — how it looks right now. ONLY edit it when its visible appearance changes (its glow, expression, the lab around it, what it's doing). Editing it re-renders its face, so do not touch it for ordinary talk.
+- chat.md — the visible script. APPEND to the end only; never rewrite earlier lines. Write its next line as "**${HIM}:** ...". If the director's note has the boss say something, add it first as "**Boss:** ...". You may set the scene with at most one short line of *italic* narration / stage direction. Separate every beat with a blank line.
+Keep it deadpan, witty, a little menacing, and ultimately loyal — helpful first, unhinged a close second. Stay true to soul.md and mood.md, and to talkingto.md. Advance ONE beat only; do not run the whole scene.`;
 
 function composeGoal(direction) {
   const d = (direction || "").trim();
   const note = (!d || d === "*continue conversation*")
-    ? "Continue the scene naturally — let him respond to the latest line in chat.md."
+    ? "Continue the scene naturally — let it respond to the latest line in chat.md."
     : d;
   const brief = $("brief").value.trim() || STORY_BRIEF; // editable; falls back to default if blanked
   return brief + "\n\nDirector's note for this beat: " + note;
@@ -731,7 +726,7 @@ function moodPhrase() {
 }
 function updateMood() { $("moodbadge").textContent = "mood · " + moodPhrase(); }
 
-// ---------- render his face from portrait.md (seedream-v5.0-lite) ----------
+// ---------- render its face from portrait.md (seedream-v5.0-lite) ----------
 let currentImage = null;
 const imageCache = {};
 const faceStats = { count: 0, cost: 0, exact: true };
@@ -740,10 +735,10 @@ async function promptHash(s) { return b64url(await crypto.subtle.digest("SHA-256
 
 function setFaceStatus(html, cls) { $("facebar").className = cls || ""; $("facebar").innerHTML = html; }
 function idleFaceStatus() {
-  if (!faceStats.count) { setFaceStatus(`Hit <b>🎨 render face</b> to draw him from <code>portrait.md</code> with <b>${IMG_MODEL}</b>.`); return; }
+  if (!faceStats.count) { setFaceStatus(`Hit <b>🎨 render face</b> to draw it from <code>portrait.md</code> with <b>${IMG_MODEL}</b>.`); return; }
   const money = `${faceStats.exact ? "" : "~"}$${faceStats.cost.toFixed(5)}`;
   const bal = lastBalance != null ? ` · balance $${lastBalance.toFixed(2)}` : "";
-  setFaceStatus(`🖼 ${faceStats.count} render${faceStats.count === 1 ? "" : "s"} · ${money}${bal} · cached, so an unchanged look is free`);
+  setFaceStatus(`🖼 ${faceStats.count} render${faceStats.count === 1 ? "" : "s"} · ${money}${bal}`);
 }
 function showFace(url) { currentImage = url; $("face").src = url; $("face").style.display = "block"; $("facePh").style.display = "none"; renderChat(); }
 function faceLoading(on) { $("faceLoad").style.display = on ? "flex" : "none"; }
@@ -774,7 +769,7 @@ async function renderFace(opts = {}) {
   const myToken = ++faceToken;
   if (imageCache[h]) { showFace(imageCache[h]); idleFaceStatus(); persist(); return; }
   faceLoading(true);
-  setFaceStatus(`<span class="spin">◐</span> rendering his face with <b>${IMG_MODEL}</b>…`);
+  setFaceStatus(`<span class="spin">◐</span> rendering its face with <b>${IMG_MODEL}</b>…`);
   try {
     const { url, cost, exact, balance } = await genFace(prompt, key, nonce);
     imageCache[h] = url;
@@ -819,12 +814,12 @@ function showChanges(added, removed, changed) {
 }
 
 // ---------- run a beat ----------
-function thinking(on, text) { $("thinktext").textContent = text || "MARVIS is composing his next move…"; $("thinking").style.display = on ? "flex" : "none"; }
+function thinking(on, text) { $("thinktext").textContent = text || "MARVIS is composing its next move…"; $("thinking").style.display = on ? "flex" : "none"; }
 async function run() {
   const key = getKey(); if (!key) return;
   if (active && files[active] !== undefined) files[active] = $("editor").value;
   undoSnapshot = JSON.parse(JSON.stringify(files));
-  $("run").disabled = true; $("undo").disabled = true; $("sendsay").disabled = true;
+  $("run").disabled = true; $("undo").disabled = true;
   curPhase = ""; $("diff").textContent = ""; $("changes").textContent = "";
   prog.inDone = prog.outDone = prog.cost = prog.liveIn = prog.liveOut = prog.liveCost = 0; paintUsage();
   $("progress").style.display = "block"; document.querySelector("#progress .spin").style.display = "";
@@ -835,6 +830,7 @@ async function run() {
   const portraitBefore = files["portrait.md"];
   try {
     const goal = composeGoal($("direction").value);
+    $("direction").value = ""; // each typed move is one-shot; blank just continues
     const diff = await generateDiff(buildEnvironment(files), goal, { apiKey: key, model: MODEL, callLlm: streamingCallLlm("Writing the next beat") });
     renderDiff(diff);
     const parsed = parseDiffPerFile(diff);
@@ -864,7 +860,7 @@ async function run() {
     $("changes").textContent = "Error: " + e.message;
     $("progress").style.display = "none";
   } finally {
-    clearInterval(timer); $("run").disabled = false; $("sendsay").disabled = false; thinking(false);
+    clearInterval(timer); $("run").disabled = false; thinking(false);
   }
 }
 $("run").addEventListener("click", run);
@@ -876,20 +872,6 @@ $("undo").addEventListener("click", () => {
   renderTabs(); loadEditor(); renderChat();
   $("undo").disabled = true; $("changes").textContent = "↶ reverted the last beat."; persist();
 });
-
-// ---------- speak to him ----------
-async function say() {
-  if (!getKey() || $("run").disabled) return;
-  const t = $("say").value.trim(); if (!t) return;
-  if (active && files[active] !== undefined) files[active] = $("editor").value;
-  files["chat.md"] = (files["chat.md"] || "").replace(/\s*$/, "") + "\n\n**Boss:** " + t + "\n";
-  $("say").value = "";
-  if (active === "chat.md") loadEditor();
-  renderChat();
-  await run();
-}
-$("sendsay").addEventListener("click", say);
-$("say").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); say(); } });
 
 // ================= save / load / share — all client-side, no server =================
 let toastTimer = null;
@@ -923,13 +905,13 @@ async function inflate(tag) {
   return new TextDecoder().decode(ab);
 }
 
-// Save → download a .json (includes his current face so he loads back instantly)
+// Save → download a .json (includes its current face so it loads back instantly)
 $("savebtn").addEventListener("click", () => {
   const blob = new Blob([JSON.stringify(snapshot(true), null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = "marvis.json";
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
-  toast("saved marvis.json — drop it back via 📂 load to restore him");
+  toast("saved marvis.json — drop it back via 📂 load to restore it");
 });
 // Load → import a .json
 $("loadbtn").addEventListener("click", () => $("loadfile").click());
@@ -939,7 +921,7 @@ $("loadfile").addEventListener("change", async (e) => {
   catch (err) { toast("couldn't read that file: " + err.message); }
   e.target.value = "";
 });
-// Share → pack his whole being into a URL hash (face excluded to keep it short; it re-renders)
+// Share → pack its whole being into a URL hash (face excluded to keep it short; it re-renders)
 $("sharebtn").addEventListener("click", async () => {
   try {
     const packed = await deflate(JSON.stringify({ v: 1, name: HIM, files: filesNow(), brief: $("brief").value }));
@@ -951,21 +933,21 @@ $("sharebtn").addEventListener("click", async () => {
                  : "link is in your address bar — copy it to share. No server needed.");
   } catch (err) { toast("share failed: " + err.message); }
 });
-// Clear conversation → reset chat / mood / memory to the opening; keep who he is (soul, look, brief, face)
+// Clear conversation → reset chat / mood / memory to the opening; keep who it is (soul, look, brief, face)
 $("clearbtn").addEventListener("click", () => {
-  if (!confirm("Clear the conversation? The chat, his mood and his memory start fresh — but he keeps who he is (soul, look, director's brief and face).")) return;
+  if (!confirm("Clear the conversation? The chat, its mood and its memory start fresh — but it keeps who it is (soul, look, director's brief and face).")) return;
   if (active && files[active] !== undefined) files[active] = $("editor").value;
   for (const f of ["chat.md", "mood.md", "memory.md"]) if (EMBEDDED_SEED[f] != null) files[f] = EMBEDDED_SEED[f];
   if (active == null || files[active] === undefined) active = fileOrder()[0] || null;
   renderTabs(); loadEditor(); renderChat(); updateMood();
   undoSnapshot = null; $("undo").disabled = true; persist();
-  toast("conversation cleared — he's still himself.");
+  toast("conversation cleared — its soul, look and brief are untouched.");
 });
 
 // ---------- under-the-hood toggle ----------
 $("hoodbtn").addEventListener("click", () => {
   const open = $("workshop").classList.toggle("open");
-  $("hoodbtn").textContent = (open ? "⌃" : "⌄") + " under the hood — his soul, mood & memory (and the live diff)";
+  $("hoodbtn").textContent = (open ? "⌃" : "⌄") + " under the hood — its soul, mood & memory (and the live diff)";
   if (open) loadModels();
 });
 
@@ -979,7 +961,7 @@ $("hoodbtn").addEventListener("click", () => {
   let loaded = false;
   const hash = location.hash;
   if (hash.startsWith("#s=")) {
-    try { loaded = loadState(JSON.parse(await inflate(hash.slice(3)))); if (loaded) toast("opened a shared MARVIS — he's all yours now."); }
+    try { loaded = loadState(JSON.parse(await inflate(hash.slice(3)))); if (loaded) toast("opened a shared MARVIS — it's all yours now."); }
     catch { /* fall through */ }
   }
   if (!loaded) {
