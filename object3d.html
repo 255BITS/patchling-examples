@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>gptdiff · 3d object studio</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 1320px; margin: 1.2rem auto; padding: 0 1rem; }
+  header { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+  h1 { font-size: 1.15rem; margin: 0; flex: 1; }
+  #status { font-size: .78rem; opacity: .6; }
+  a, button.link { font-size: .78rem; background: none; border: none; color: #2563eb; cursor: pointer; padding: 0; }
+  label { display: block; font-size: .8rem; opacity: .7; margin: .8rem 0 .2rem; }
+  input, textarea { width: 100%; box-sizing: border-box; font: inherit; padding: .5rem; border-radius: .5rem; border: 1px solid #8888; }
+  textarea { font-family: ui-monospace, monospace; font-size: 12.5px; }
+  button.go { font: inherit; padding: .55rem 1rem; border-radius: .5rem; border: 1px solid #8888; cursor: pointer; background: #8881; margin-top: .8rem; }
+  button.go.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+  button:disabled { opacity: .5; cursor: default; }
+  .dim { opacity: .6; }
+
+  .lab { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; margin-top: 1rem; align-items: start; }
+  @media (max-width: 900px) { .lab { grid-template-columns: 1fr; } }
+
+  /* file tabs */
+  #files { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+  .ftab { display: inline-flex; align-items: center; gap: .4rem; font-family: ui-monospace, monospace; font-size: 12px;
+          padding: .25rem .5rem; border: 1px solid #8884; border-radius: .45rem; background: #8881; cursor: pointer; }
+  .ftab.sel { border-color: #2563eb; background: #2563eb22; font-weight: 600; }
+  .ftab .x { opacity: .5; font-size: 13px; line-height: 1; }
+  .ftab .x:hover { opacity: 1; color: #cf222e; }
+  .ftab.add { border-style: dashed; color: #2563eb; }
+
+  pre { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word;
+        background: #8881; border-radius: .5rem; padding: .7rem; max-height: 240px; overflow: auto; margin: 0; }
+  .diff .add { color: #1a7f37; } .diff .del { color: #cf222e; } .diff .hdr { opacity: .6; }
+  details > summary { cursor: pointer; font-size: .8rem; opacity: .7; margin-top: .8rem; }
+
+  #progress { display: none; margin-top: .8rem; padding: .6rem .8rem; border: 1px solid #8884; border-radius: .5rem; background: #8881; font-size: 13px; }
+  #progress .metrics { font-family: ui-monospace, monospace; margin-top: .25rem; }
+  #changes { font-size: .8rem; margin-top: .5rem; min-height: 1.2em; }
+  #changes .a { color: #1a7f37; } #changes .r { color: #cf222e; } #changes .c { opacity: .8; }
+
+  #key { display: none; margin-top: .5rem; }
+  #key input { max-width: 420px; display: inline-block; width: auto; }
+
+  .modelrow { font-size: .85rem; }
+  .modelrow b { font-family: ui-monospace, monospace; }
+  #modelrow { margin-top: .6rem; } #modelrow-apply { margin-top: .25rem; }
+  #modelpicker { display: none; margin-top: .4rem; border: 1px solid #8884; border-radius: .5rem; padding: .6rem; max-width: 560px; }
+  #modellist { max-height: 240px; overflow: auto; margin-top: .4rem; }
+  #modellist button { display: flex; justify-content: space-between; gap: 1rem; width: 100%; text-align: left;
+                      font-family: ui-monospace, monospace; font-size: 12px; padding: .3rem .4rem; border: none;
+                      background: none; border-radius: .3rem; cursor: pointer; }
+  #modellist button:hover { background: #8882; }
+  #modellist button.sel { background: #2563eb22; font-weight: 600; }
+  #modellist .price { opacity: .6; white-space: nowrap; }
+  #modellist .divider { font-size: 11px; opacity: .5; text-align: center; margin: .35rem 0; }
+  #modellist .mname { display: flex; align-items: center; gap: .4rem; min-width: 0; }
+  .tag { font-family: system-ui, sans-serif; font-size: 10px; padding: .05rem .35rem; border-radius: .6rem; white-space: nowrap; }
+  .tag.priv { background: #3b82f622; color: #2563eb; } .tag.closed { background: #f59e0b22; color: #b45309; }
+
+  /* preview */
+  .pvtools { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .5rem; }
+  .pvtools .grow { flex: 1; }
+  .stagewrap { position: relative; width: 100%; aspect-ratio: 1 / 1; border-radius: .6rem; overflow: hidden; border: 1px solid #8884;
+               background: radial-gradient(120% 120% at 50% 0%, #1a1f33 0%, #090b14 70%); }
+  #pvframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; color-scheme: normal; }
+  .hint { font-size: .76rem; opacity: .6; margin-top: .5rem; }
+  .spin { display: inline-block; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>gptdiff · 3d object studio</h1>
+  <span id="status">checking…</span>
+  <a id="signin" href="#" style="display:none">Sign in with NanoGPT</a>
+  <button id="pastebtn" class="link" style="display:none">paste key</button>
+  <button id="signout" class="link" style="display:none">sign out</button>
+</header>
+
+<p class="dim" style="font-size:.85rem;margin:.3rem 0 0">
+  A 3D object built from <b>multiple files</b> — the geometry, the material, an SVG texture, the lighting/effects,
+  and a JSON config. Describe a change, and gptdiff rewrites <i>all</i> of them (adding or removing files as needed);
+  the viewer on the right re-renders live. Drag to orbit, scroll to zoom, then <b>export</b> a <code>.glb</code> /
+  <code>.obj</code> you can open in Blender, Three.js, Unity, or any 3D tool.
+</p>
+
+<div id="key">
+  <input id="keyinput" placeholder="sk-nano-…" />
+  <button id="keysave" class="link">save</button>
+  <span class="dim" style="font-size:.78rem">— from <a href="https://nano-gpt.com/r/mgzwtqjw" target="_blank" rel="noopener">nano-gpt.com</a> → Settings → API</span>
+</div>
+
+<div id="modelrow" class="modelrow">Diff model: <b id="modelname-diff">…</b> <span id="modeltags-diff"></span> <span id="modelprice-diff"></span> <button class="link modelchange" data-target="diff">change</button></div>
+<div id="modelrow-apply" class="modelrow">Apply model: <b id="modelname-apply">…</b> <span id="modeltags-apply"></span> <span id="modelprice-apply"></span> <button class="link modelchange" data-target="apply">change</button></div>
+<div id="modelpicker">
+  <input id="modelsearch" placeholder="filter 600+ models, or type an exact id…" autocomplete="off" />
+  <div id="modellist"></div>
+  <div class="dim" style="font-size:.75rem;margin-top:.3rem"><span id="modelcount"></span> · top = each frontier lab's latest flagship · price = $ in / $ out per 1M · Enter to use exact text</div>
+</div>
+
+<div class="lab">
+  <!-- LEFT: the multi-file project + the goal -->
+  <div>
+    <label>Project files <span class="dim">(gptdiff edits, adds &amp; removes these)</span></label>
+    <div id="files"></div>
+
+    <label id="activelabel" for="editor" style="font-family:ui-monospace,monospace">…</label>
+    <textarea id="editor" rows="18" spellcheck="false"></textarea>
+
+    <label for="goal">Goal (what to change)</label>
+    <input id="goal" value="Turn it into a glowing crystal — sharper facets, emissive cyan edges, slower spin" />
+
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <button id="run" class="go primary">Diff &amp; apply → re-render</button>
+      <button id="undo" class="go" disabled>↶ undo</button>
+    </div>
+
+    <div id="progress">
+      <span class="spin">◐</span> <b id="phase">starting…</b> · ⏱ <span id="elapsed">0.0</span>s
+      <div class="metrics">↓ <span id="inTok">0</span> in · ↑ <span id="outTok">0</span> out · <span id="cost">$0.00000</span> <span id="livenote" class="dim"></span></div>
+    </div>
+    <div id="changes"></div>
+
+    <details>
+      <summary>Generated diff</summary>
+      <pre id="diff" class="diff" style="margin-top:.4rem"></pre>
+    </details>
+  </div>
+
+  <!-- RIGHT: the live 3D viewer -->
+  <div>
+    <div class="pvtools">
+      <span class="grow" style="font-size:.85rem;font-weight:600">Live preview · drag to orbit</span>
+      <label class="toggle" style="font-size:.78rem;display:inline-flex;align-items:center;gap:.3rem;opacity:.85"><input type="checkbox" id="live" checked /> live edits</label>
+      <button id="reset" class="link">↻ reset view</button>
+    </div>
+    <div class="stagewrap">
+      <iframe id="pvframe" sandbox="allow-scripts" title="3d preview"></iframe>
+    </div>
+    <div class="pvtools" style="margin-top:.5rem">
+      <span class="dim" style="font-size:.78rem">download:</span>
+      <button id="exp-glb" class="link" style="font-weight:600">⬇ .glb</button>
+      <button id="exp-obj" class="link">⬇ .obj</button>
+      <span id="exp-status" class="dim" style="font-size:.75rem"></span>
+    </div>
+    <div class="hint">
+      The object, its material, the SVG texture and the lighting all live as editable files on the left. <b>.glb</b>
+      (binary glTF, embeds the material + texture) and <b>.obj</b> (geometry-only, universal) both import straight
+      into Blender / Maya / Unity / Three.js.
+    </div>
+  </div>
+</div>
+
+<footer style="margin-top:2rem;padding-top:1rem;border-top:1px solid #8883;font-size:.85rem">
+  <b>Other examples</b> · <a href="index.html">gptdiff · diff → smartapply</a> · <a href="overlay.html">🎬 realtime video overlay</a> · <a href="comic.html">📖 AI-liftoff comic</a> · <a href="count.html">🔢 count to 100</a>
+</footer>
+
+<script type="module">
+import { buildEnvironment, generateDiff, smartapply, parseDiffPerFile, callLlmForApply, setEnv }
+  from "https://esm.sh/gh/255BITS/gptdiff-js";
+
+const DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
+const APPLY_DEFAULT = "xiaomi/mimo-v2.5-pro-ultraspeed";
+const NANOGPT = "https://nano-gpt.com";
+const $ = (id) => document.getElementById(id);
+
+let MODEL = localStorage.getItem("ngpt_model") || DEFAULT_MODEL;
+let APPLY = localStorage.getItem("ngpt_apply_model") || APPLY_DEFAULT;
+let pickerTarget = "diff";
+
+if (location.hostname === "127.0.0.1") location.hostname = "localhost";
+
+// ---------- key storage ----------
+const getKey = () => localStorage.getItem("ngpt_key");
+const setKey = (k) => { k ? localStorage.setItem("ngpt_key", k) : localStorage.removeItem("ngpt_key"); if (k) setEnv("GPTDIFF_LLM_API_KEY", k); };
+if (getKey()) setEnv("GPTDIFF_LLM_API_KEY", getKey());
+
+// ---------- browser OAuth PKCE ----------
+const REDIRECT_URI = location.origin + location.pathname;
+const b64url = (b) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const rand = (n) => b64url(crypto.getRandomValues(new Uint8Array(n)));
+const sha256url = async (s) => b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
+
+async function clientId() {
+  const cached = JSON.parse(localStorage.getItem("ngpt_client") || "null");
+  if (cached && cached.redirect === REDIRECT_URI) return cached.id;
+  const r = await fetch(`${NANOGPT}/oauth/register`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client_name: "gptdiff 3d studio", redirect_uris: [REDIRECT_URI],
+      grant_types: ["authorization_code"], response_types: ["code"], token_endpoint_auth_method: "none" }),
+  });
+  if (!r.ok) throw new Error("register " + r.status);
+  const id = (await r.json()).client_id;
+  localStorage.setItem("ngpt_client", JSON.stringify({ id, redirect: REDIRECT_URI }));
+  return id;
+}
+async function signIn() {
+  const id = await clientId();
+  const verifier = rand(32), state = rand(16);
+  sessionStorage.setItem("pkce", JSON.stringify({ verifier, state, id }));
+  const u = new URL(`${NANOGPT}/oauth/authorize`);
+  u.search = new URLSearchParams({
+    response_type: "code", client_id: id, redirect_uri: REDIRECT_URI, scope: "api.use models.read",
+    state, code_challenge: await sha256url(verifier), code_challenge_method: "S256",
+  }).toString();
+  location.assign(u.toString());
+}
+async function handleRedirect() {
+  const p = new URLSearchParams(location.search);
+  if (!p.has("code") && !p.has("error")) return;
+  history.replaceState({}, "", REDIRECT_URI);
+  const saved = JSON.parse(sessionStorage.getItem("pkce") || "null");
+  sessionStorage.removeItem("pkce");
+  if (p.get("error")) throw new Error(p.get("error"));
+  if (!saved || p.get("state") !== saved.state) throw new Error("state mismatch");
+  const r = await fetch(`${NANOGPT}/oauth/token`, {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code", client_id: saved.id,
+      redirect_uri: REDIRECT_URI, code: p.get("code"), code_verifier: saved.verifier }),
+  });
+  if (!r.ok) throw new Error("token exchange: " + (await r.text()));
+  setKey((await r.json()).access_token);
+}
+function renderAuth() {
+  const signed = !!getKey();
+  $("status").textContent = signed ? "ready ✓" : "not signed in";
+  $("signin").style.display = signed ? "none" : "";
+  $("pastebtn").style.display = signed ? "none" : "";
+  $("signout").style.display = signed ? "" : "none";
+  $("run").disabled = !signed;
+}
+$("signin").addEventListener("click", (e) => { e.preventDefault(); signIn().catch((err) => $("status").textContent = "sign-in error: " + err.message); });
+$("pastebtn").addEventListener("click", () => { $("key").style.display = "block"; $("keyinput").focus(); });
+$("keysave").addEventListener("click", () => { const k = $("keyinput").value.trim(); if (k) { setKey(k); $("key").style.display = "none"; renderAuth(); } });
+$("signout").addEventListener("click", () => { setKey(null); renderAuth(); });
+
+// ---------- model selection ----------
+let allModels = null, topOrder = new Map();
+const LABS = [
+  ["OpenAI", /^openai\/(gpt-[0-9]|o[1-9])/i],
+  ["Anthropic", /claude-(opus|sonnet)/i],
+  ["Google", /gemini[0-9.\-]*-pro|gemini-pro/i],
+  ["xAI", /grok-[0-9]/i],
+  ["DeepSeek", /deepseek-(r1|v3|v4|chat)/i],
+  ["Qwen", /qwen[0-9.]*-max/i],
+  ["Mistral", /mistral-large/i],
+];
+const PINNED = ["xiaomi/mimo-v2.5-pro-ultraspeed", "moonshotai/kimi-k2.7-code-highspeed", "moonshotai/kimi-k2.7-code"];
+const SMALL = /flash|nano|\blite\b|\bmini\b|-mini|\bsmall\b|tiny|oss|guard|preview|search|codex|:(low|medium|high|thinking)|cheaper|multi-agent|-\d+b\b|a\d+b\b|^tee\//i;
+const px = (x) => (x == null ? null : "$" + Number(x).toFixed(2));
+const priceOf = (id) => (allModels || []).find((m) => m.id === id);
+function computeTop() {
+  const ids = new Set(allModels.map((m) => m.id));
+  const order = PINNED.filter((id) => ids.has(id));
+  const picks = [];
+  for (const [, re] of LABS) {
+    const m = allModels.filter((x) => re.test(x.id) && !SMALL.test(x.id)).sort((a, b) => (b.created || 0) - (a.created || 0))[0];
+    if (m && !order.includes(m.id)) picks.push(m);
+  }
+  picks.sort((a, b) => (b.created || 0) - (a.created || 0));
+  for (const m of picks) order.push(m.id);
+  topOrder = new Map(order.map((id, i) => [id, i]));
+}
+const rank = (id) => (topOrder.has(id) ? topOrder.get(id) : 1e9);
+const selectedFor = (target) => (target === "apply" ? APPLY : MODEL);
+function setModel(id, target) {
+  if (target === "apply") { APPLY = id; localStorage.setItem("ngpt_apply_model", id); }
+  else { MODEL = id; localStorage.setItem("ngpt_model", id); }
+  renderModelRow(target);
+}
+function renderModelRow(target) {
+  const id = selectedFor(target);
+  const m = priceOf(id) || { id };
+  $(`modelname-${target}`).textContent = id;
+  $(`modelprice-${target}`).textContent = m.prompt != null ? `(${px(m.prompt)} / ${px(m.completion)} per 1M)` : "";
+  $(`modeltags-${target}`).replaceChildren(...tagEls(m));
+}
+async function loadModels() {
+  if (allModels) return allModels;
+  let arr = [];
+  try {
+    const headers = {}; const k = getKey(); if (k) headers.Authorization = `Bearer ${k}`;
+    arr = (await (await fetch(`${NANOGPT}/api/v1/models?detailed=true`, { headers })).json()).data || [];
+  } catch { /* ignore */ }
+  allModels = arr.map((m) => ({ id: m.id, prompt: m.pricing?.prompt, completion: m.pricing?.completion, owned_by: m.owned_by, created: m.created })).filter((m) => m.id);
+  if (!allModels.length) allModels = [{ id: DEFAULT_MODEL }];
+  computeTop();
+  allModels.sort((a, b) => (rank(a.id) - rank(b.id)) || a.id.localeCompare(b.id));
+  renderModelRow("diff"); renderModelRow("apply");
+  return allModels;
+}
+function tagsFor(m) {
+  const t = [];
+  if (m.id.startsWith("TEE/")) t.push(["private", "priv", "Runs in a Trusted Execution Environment"]);
+  const ob = (m.owned_by || "").toLowerCase();
+  if (["openai", "anthropic", "x-ai", "google", "gemini"].includes(ob)) t.push(["closed source", "closed", "Closed-source / proprietary model"]);
+  return t;
+}
+function tagEls(m) {
+  return tagsFor(m).map(([txt, cls, title]) => { const s = document.createElement("span"); s.className = "tag " + cls; s.textContent = txt; s.title = title; return s; });
+}
+function modelButton(m) {
+  const b = document.createElement("button");
+  if (m.id === selectedFor(pickerTarget)) b.className = "sel";
+  const left = document.createElement("span"); left.className = "mname";
+  const name = document.createElement("span"); name.textContent = m.id;
+  left.append(name, ...tagEls(m));
+  const price = document.createElement("span"); price.className = "price";
+  price.textContent = m.prompt != null ? `${px(m.prompt)} / ${px(m.completion)}` : "—";
+  b.append(left, price);
+  b.addEventListener("click", () => { setModel(m.id, pickerTarget); $("modelpicker").style.display = "none"; });
+  return b;
+}
+function renderModelList() {
+  const q = $("modelsearch").value.trim().toLowerCase();
+  const matches = (allModels || []).filter((m) => m.id.toLowerCase().includes(q));
+  const shown = matches.slice(0, 200);
+  $("modellist").innerHTML = "";
+  let dividerPlaced = !!q;
+  for (const m of shown) {
+    if (!dividerPlaced && rank(m.id) === 1e9) {
+      const d = document.createElement("div"); d.className = "divider"; d.textContent = "— all models —";
+      $("modellist").appendChild(d); dividerPlaced = true;
+    }
+    $("modellist").appendChild(modelButton(m));
+  }
+  $("modelcount").textContent = `${matches.length} match${matches.length === 1 ? "" : "es"}` + (matches.length > shown.length ? ` (showing ${shown.length})` : "");
+}
+for (const btn of document.querySelectorAll(".modelchange")) {
+  btn.addEventListener("click", async () => {
+    const target = btn.dataset.target;
+    const same = $("modelpicker").style.display === "block" && pickerTarget === target;
+    pickerTarget = target;
+    $("modelpicker").style.display = same ? "none" : "block";
+    if (!same) { $("modelsearch").value = ""; $("modellist").innerHTML = "<div class='dim'>loading…</div>"; await loadModels(); renderModelList(); $("modelsearch").focus(); }
+  });
+}
+$("modelsearch").addEventListener("input", renderModelList);
+$("modelsearch").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { const v = $("modelsearch").value.trim(); if (v) { setModel(v, pickerTarget); $("modelpicker").style.display = "none"; } }
+});
+
+// ---------- streaming LLM client injected into gptdiff-js ----------
+const fmtCost = (c) => "$" + (c || 0).toFixed(5);
+const n = (x) => (x || 0).toLocaleString();
+const words = (s) => (String(s).match(/\S+/g) || []).length;
+const prog = { inDone: 0, outDone: 0, cost: 0, liveIn: 0, liveOut: 0, liveCost: 0 };
+function paintUsage() {
+  $("inTok").textContent = n(prog.inDone + prog.liveIn);
+  $("outTok").textContent = n(prog.outDone + prog.liveOut);
+  $("cost").textContent = fmtCost(prog.cost + prog.liveCost); // committed + in-flight estimate
+}
+function streamingCallLlm(phase) {
+  return async ({ apiKey, baseUrl, model, messages, maxTokens = 30000, temperature = 1.0 }) => {
+    $("phase").textContent = phase;
+    const inEst = messages.reduce((s, m) => s + words(typeof m.content === "string" ? m.content : JSON.stringify(m.content)), 0);
+    const price = priceOf(model) || {};
+    const inPer = (Number(price.prompt) || 0) / 1e6, outPer = (Number(price.completion) || 0) / 1e6;
+    let prevOut = 0, myCost = 0;
+    const recost = () => { const c = inEst * inPer + prevOut * outPer; prog.liveCost += c - myCost; myCost = c; };
+    prog.liveIn += inEst; recost(); paintUsage();
+    const endpoint = (baseUrl || `${NANOGPT}/api/v1/`).replace(/\/+$/, "") + "/chat/completions";
+    let r;
+    try {
+      r = await fetch(endpoint, {
+        method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, stream: true }),
+      });
+    } catch (e) { prog.liveIn -= inEst; prog.liveCost -= myCost; throw e; }
+    if (!r.ok) { prog.liveIn -= inEst; prog.liveCost -= myCost; throw new Error(`LLM ${r.status}: ${await r.text()}`); }
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "", content = "", reasoning = "", pricing = null, lastTick = 0;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t.startsWith("data:")) continue;
+        const data = t.slice(5).trim();
+        if (data === "[DONE]") continue;
+        let j; try { j = JSON.parse(data); } catch { continue; }
+        const d = j.choices?.[0]?.delta;
+        if (d) {
+          if (d.content) { content += d.content; appendText(phase, d.content); }
+          if (d.reasoning) reasoning += d.reasoning;
+          if (d.content || d.reasoning) {
+            const cur = words(content) + words(reasoning);
+            prog.liveOut += cur - prevOut; prevOut = cur; recost();
+            const now = performance.now();
+            if (now - lastTick > 80) { lastTick = now; paintUsage(); $("livenote").textContent = content ? "" : "· thinking…"; }
+          }
+        }
+        if (j.x_nanogpt_pricing) pricing = j.x_nanogpt_pricing;
+      }
+    }
+    prog.liveIn -= inEst; prog.liveOut -= prevOut; prog.liveCost -= myCost;
+    prog.inDone += pricing?.inputTokens ?? inEst;
+    prog.outDone += pricing?.outputTokens ?? prevOut;
+    prog.cost += pricing?.costUsd ?? pricing?.cost ?? myCost; // exact, else keep the estimate
+    paintUsage(); $("livenote").textContent = "";
+    return { choices: [{ message: { content } }] };
+  };
+}
+
+// ================= multi-file project =================
+let files = {};       // { path: content }
+let active = null;    // selected path
+let undoSnapshot = null;
+
+// Built-in 3D scene. preview.html stitches the pieces together with Three.js.
+const EMBEDDED_SEED = {
+  "preview.html": `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>3D object</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; color-scheme: normal; }
+  #app { position: absolute; inset: 0; }
+  #app canvas { display: block; }
+</style>
+<!-- include-config: scene.json -->
+<!-- include-texture: texture.svg -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+<\/script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- Each piece of the object is its own file. gptdiff edits these directly. -->
+  <script src="object.js"><\/script>
+  <script src="material.js"><\/script>
+  <script src="effects.js"><\/script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+    import { OBJExporter } from "three/addons/exporters/OBJExporter.js";
+
+    const cfg = window.SCENE_CONFIG || {};
+    const G = window.GPTDIFF3D || {};
+    const host = document.getElementById("app");
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(host.clientWidth, host.clientHeight);
+    host.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    if (cfg.background) scene.background = new THREE.Color(cfg.background);
+
+    const camera = new THREE.PerspectiveCamera(45, host.clientWidth / host.clientHeight, 0.1, 100);
+    camera.position.set(0, 0.4, 4);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+
+    // Texture built from texture.svg (data URL injected by the bundler).
+    let texture = null;
+    if (window.SCENE_TEXTURE_SVG) {
+      texture = new THREE.TextureLoader().load(window.SCENE_TEXTURE_SVG, () => renderer.render(scene, camera));
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    }
+
+    const geometry = G.geometry ? G.geometry(THREE, cfg) : new THREE.TorusKnotGeometry(0.85, 0.28, 200, 32);
+    const material = G.material ? G.material(THREE, cfg, texture) : new THREE.MeshStandardMaterial({ color: 0x7c5cff });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = cfg.name || "GptdiffObject";
+    scene.add(mesh);
+
+    const update = G.effects ? G.effects(THREE, scene, mesh, cfg) : null;
+
+    const clock = new THREE.Clock();
+    function tick() {
+      const t = clock.getElapsedTime();
+      if (typeof update === "function") update(t, mesh);
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(tick);
+    }
+    tick();
+
+    function resize() {
+      const w = host.clientWidth, h = host.clientHeight;
+      camera.aspect = w / h; camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+    window.addEventListener("resize", resize);
+
+    // ---- export to a real 3D-modelling file (handled by the parent page) ----
+    function exportModel(format) {
+      const r = mesh.rotation.clone();
+      mesh.rotation.set(0, 0, 0);           // bake a clean, un-spun pose
+      mesh.updateMatrixWorld(true);
+      const restore = () => { mesh.rotation.copy(r); };
+      if (format === "obj") {
+        const text = new OBJExporter().parse(mesh);
+        restore();
+        parent.postMessage({ type: "gptdiff3d:exported", format: "obj", text, filename: "model.obj" }, "*");
+      } else {
+        new GLTFExporter().parse(mesh, (buffer) => {
+          restore();
+          parent.postMessage({ type: "gptdiff3d:exported", format: "glb", buffer, filename: "model.glb" }, "*", [buffer]);
+        }, (err) => { restore(); parent.postMessage({ type: "gptdiff3d:error", message: String(err) }, "*"); },
+        { binary: true });
+      }
+    }
+    window.addEventListener("message", (e) => {
+      const d = e.data || {};
+      if (d.type === "gptdiff3d:export") exportModel(d.format);
+      else if (d.type === "gptdiff3d:reset") controls.reset();
+    });
+    parent.postMessage({ type: "gptdiff3d:ready" }, "*");
+  <\/script>
+</body>
+</html>
+`,
+  "scene.json": `{
+  "name": "GptdiffObject",
+  "shape": "torusKnot",
+  "color": "#7c5cff",
+  "metalness": 0.6,
+  "roughness": 0.25,
+  "wireframe": false,
+  "useTexture": true,
+  "textureRepeat": 2,
+  "background": "#0b0d17",
+  "lightColor": "#ffffff",
+  "lightIntensity": 1.3,
+  "rimColor": "#22d3ee",
+  "autoRotate": true,
+  "rotateSpeed": 1.0
+}
+`,
+  "object.js": `// The geometry of the object. Return any THREE.BufferGeometry.
+// gptdiff can swap the shape, change resolution, or build something custom here.
+window.GPTDIFF3D = window.GPTDIFF3D || {};
+window.GPTDIFF3D.geometry = function (THREE, cfg) {
+  switch (cfg.shape) {
+    case "box":       return new THREE.BoxGeometry(1.5, 1.5, 1.5, 4, 4, 4);
+    case "sphere":    return new THREE.SphereGeometry(1.1, 64, 48);
+    case "torus":     return new THREE.TorusGeometry(0.95, 0.38, 32, 96);
+    case "cone":      return new THREE.ConeGeometry(1.1, 1.8, 64);
+    case "icosahedron": return new THREE.IcosahedronGeometry(1.2, 0);
+    case "torusKnot":
+    default:          return new THREE.TorusKnotGeometry(0.85, 0.28, 220, 32);
+  }
+};
+`,
+  "material.js": `// The surface material. \`texture\` is built from texture.svg (or null if disabled).
+// gptdiff can retune metalness/roughness, add emissive glow, switch material type, etc.
+window.GPTDIFF3D = window.GPTDIFF3D || {};
+window.GPTDIFF3D.material = function (THREE, cfg, texture) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(cfg.color || "#7c5cff"),
+    metalness: cfg.metalness ?? 0.6,
+    roughness: cfg.roughness ?? 0.25,
+    wireframe: !!cfg.wireframe,
+    emissive: new THREE.Color(cfg.emissive || "#000000"),
+    emissiveIntensity: cfg.emissiveIntensity ?? 1,
+  });
+  if (cfg.useTexture && texture) {
+    const rep = cfg.textureRepeat ?? 2;
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(rep, rep);
+    mat.map = texture;
+  }
+  return mat;
+};
+`,
+  "texture.svg": `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <rect width="256" height="256" fill="#161a2b" />
+  <g fill="none" stroke="#7c5cff" stroke-width="3">
+    <circle cx="128" cy="128" r="96" />
+    <circle cx="128" cy="128" r="60" />
+    <circle cx="128" cy="128" r="26" />
+    <path d="M0 128 H256 M128 0 V256" />
+  </g>
+  <g fill="#22d3ee">
+    <circle cx="0" cy="0" r="9" /><circle cx="256" cy="0" r="9" />
+    <circle cx="0" cy="256" r="9" /><circle cx="256" cy="256" r="9" />
+    <circle cx="128" cy="128" r="10" />
+  </g>
+</svg>
+`,
+  "effects.js": `// Lighting + animation. Add lights to \`scene\`, then return an update(timeSeconds, mesh)
+// called every frame. gptdiff can add particles, post-style glow, motion, extra lights…
+window.GPTDIFF3D = window.GPTDIFF3D || {};
+window.GPTDIFF3D.effects = function (THREE, scene, mesh, cfg) {
+  const key = new THREE.DirectionalLight(cfg.lightColor || "#ffffff", cfg.lightIntensity ?? 1.3);
+  key.position.set(3, 4, 5);
+  scene.add(key);
+
+  const rim = new THREE.DirectionalLight(cfg.rimColor || "#22d3ee", 0.7);
+  rim.position.set(-4, -1.5, -3);
+  scene.add(rim);
+
+  scene.add(new THREE.AmbientLight("#3a4163", 0.85));
+
+  const speed = cfg.rotateSpeed ?? 1;
+  return function update(t, obj) {
+    if (cfg.autoRotate) {
+      obj.rotation.y = t * 0.5 * speed;
+      obj.rotation.x = Math.sin(t * 0.3) * 0.18;
+    }
+  };
+};
+`,
+};
+const SEED_ORDER = Object.keys(EMBEDDED_SEED); // preferred tab order
+
+async function loadSeed() {
+  try {
+    const man = await (await fetch("object3d/manifest.json", { cache: "no-store" })).json();
+    const out = {};
+    await Promise.all((man.files || []).map(async (p) => {
+      out[p] = await (await fetch("object3d/" + p, { cache: "no-store" })).text();
+    }));
+    if (Object.keys(out).length) return out;
+  } catch { /* fall through to embedded */ }
+  return { ...EMBEDDED_SEED };
+}
+
+// ---------- file tabs + editor ----------
+const fileOrder = () => {
+  const keys = Object.keys(files);
+  return keys.sort((a, b) => {
+    const ai = SEED_ORDER.indexOf(a), bi = SEED_ORDER.indexOf(b);
+    if (ai !== -1 || bi !== -1) return (ai === -1 ? 1e9 : ai) - (bi === -1 ? 1e9 : bi);
+    return a.localeCompare(b);
+  });
+};
+function renderTabs() {
+  const host = $("files"); host.innerHTML = "";
+  for (const path of fileOrder()) {
+    const tab = document.createElement("span");
+    tab.className = "ftab" + (path === active ? " sel" : "");
+    const name = document.createElement("span"); name.textContent = path;
+    name.addEventListener("click", () => selectFile(path));
+    const x = document.createElement("span"); x.className = "x"; x.textContent = "✕"; x.title = "delete file";
+    x.addEventListener("click", (e) => { e.stopPropagation(); deleteFile(path); });
+    tab.append(name, x);
+    host.appendChild(tab);
+  }
+  const add = document.createElement("span");
+  add.className = "ftab add"; add.textContent = "+ file";
+  add.addEventListener("click", addFile);
+  host.appendChild(add);
+}
+function selectFile(path) {
+  if (active && files[active] !== undefined) files[active] = $("editor").value; // commit edits
+  active = path;
+  $("activelabel").textContent = path;
+  $("editor").value = files[path] ?? "";
+  renderTabs();
+}
+function loadEditor() { if (active != null) { $("activelabel").textContent = active; $("editor").value = files[active] ?? ""; } }
+function addFile() {
+  const path = prompt("New file path (e.g. layers/glow.js)");
+  if (!path) return;
+  const p = path.trim();
+  if (!p || files[p] !== undefined) { if (files[p] !== undefined) selectFile(p); return; }
+  files[p] = "";
+  renderTabs(); selectFile(p); scheduleLive();
+}
+function deleteFile(path) {
+  if (!confirm("Delete " + path + " ?")) return;
+  delete files[path];
+  if (active === path) active = fileOrder()[0] || null;
+  renderTabs(); loadEditor(); scheduleLive();
+}
+$("editor").addEventListener("input", () => { if (active != null) { files[active] = $("editor").value; scheduleLive(); } });
+
+// ---------- preview bundler: stitch every file into one HTML ----------
+function bundle(map) {
+  let html = map["preview.html"];
+  if (html == null)
+    return `<!doctype html><meta charset=utf-8><body style="font:14px system-ui;color:#888;padding:2rem">No <code>preview.html</code> in the project — add one to render the object.</body>`;
+
+  // 1. config marker -> window.SCENE_CONFIG
+  html = html.replace(/<!--\s*include-config:\s*([^>]+?)\s*-->/g, (_, p) => {
+    const raw = map[p.trim()]; let json = "{}";
+    if (raw != null) { try { json = JSON.stringify(JSON.parse(raw)); } catch { json = "{}"; } }
+    return `<script>window.SCENE_CONFIG = ${json};<\/script>`;
+  });
+  // 2. texture marker -> window.SCENE_TEXTURE_SVG (svg as a data URL)
+  html = html.replace(/<!--\s*include-texture:\s*([^>]+?)\s*-->/g, (_, p) => {
+    const raw = map[p.trim()];
+    if (raw == null) return `<script>window.SCENE_TEXTURE_SVG = null;<\/script>`;
+    const url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(raw);
+    return `<script>window.SCENE_TEXTURE_SVG = ${JSON.stringify(url)};<\/script>`;
+  });
+  // 3. local <script src="…"> -> inline contents (CDN / importmap left untouched)
+  html = html.replace(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/gi, (m, src) => {
+    if (/^(https?:)?\/\//i.test(src) || /^data:/i.test(src)) return m;
+    const raw = map[src];
+    if (raw == null) return m;
+    return `<script>\n${String(raw).replace(/<\/script/gi, "<\\/script")}\n<\/script>`;
+  });
+  return html;
+}
+
+// ---------- live preview ----------
+let liveTimer = null;
+function refreshPreview() {
+  if (active && files[active] !== undefined) files[active] = $("editor").value;
+  $("pvframe").srcdoc = bundle(files);
+}
+function scheduleLive() {
+  if (!$("live").checked) return;
+  clearTimeout(liveTimer);
+  liveTimer = setTimeout(refreshPreview, 450);
+}
+$("reset").addEventListener("click", () => $("pvframe").contentWindow?.postMessage({ type: "gptdiff3d:reset" }, "*"));
+
+// ---------- export to a 3D-modelling file ----------
+function triggerDownload(blob, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function requestExport(format) {
+  const w = $("pvframe").contentWindow;
+  if (!w) return;
+  $("exp-status").textContent = "exporting " + format + "…";
+  w.postMessage({ type: "gptdiff3d:export", format }, "*");
+}
+$("exp-glb").addEventListener("click", () => requestExport("glb"));
+$("exp-obj").addEventListener("click", () => requestExport("obj"));
+window.addEventListener("message", (e) => {
+  const d = e.data || {};
+  if (d.type === "gptdiff3d:exported") {
+    const blob = d.format === "obj"
+      ? new Blob([d.text], { type: "text/plain" })
+      : new Blob([d.buffer], { type: "model/gltf-binary" });
+    triggerDownload(blob, d.filename);
+    $("exp-status").textContent = "saved " + d.filename;
+    setTimeout(() => { $("exp-status").textContent = ""; }, 3000);
+  } else if (d.type === "gptdiff3d:error") {
+    $("exp-status").textContent = "export error: " + d.message;
+  }
+});
+
+// ---------- diff rendering ----------
+let curPhase = "";
+function appendText(phase, chunk) {
+  if (!phase.startsWith("Generating")) return; // apply streams in parallel; show the meter, not text
+  const pane = $("diff");
+  if (phase !== curPhase) { curPhase = phase; pane.textContent = ""; }
+  pane.textContent += chunk; pane.scrollTop = pane.scrollHeight;
+}
+function renderDiff(diff) {
+  $("diff").innerHTML = "";
+  if (!diff.trim()) { $("diff").textContent = "(no diff produced)"; return; }
+  for (const line of diff.split("\n")) {
+    const span = document.createElement("span");
+    span.textContent = line + "\n";
+    if (/^\+\+\+|^---|^@@|^diff |^a\/|^b\//.test(line)) span.className = "hdr";
+    else if (line.startsWith("+")) span.className = "add";
+    else if (line.startsWith("-")) span.className = "del";
+    $("diff").appendChild(span);
+  }
+}
+function showChanges(added, removed, changed) {
+  const c = $("changes"); c.innerHTML = "";
+  const part = (cls, label, arr) => { if (!arr.length) return; const s = document.createElement("span"); s.className = cls; s.textContent = `${label} ${arr.join(", ")}  `; c.appendChild(s); };
+  part("a", "＋ added", added); part("r", "－ removed", removed); part("c", "～ updated", changed);
+  if (!added.length && !removed.length && !changed.length) c.textContent = "No files changed.";
+}
+
+// ---------- run: diff → smartapply → reconcile → re-render ----------
+async function run() {
+  const key = getKey(); if (!key) return;
+  if (active && files[active] !== undefined) files[active] = $("editor").value; // commit edits
+  undoSnapshot = JSON.parse(JSON.stringify(files));
+  $("run").disabled = true; $("undo").disabled = true; curPhase = ""; $("diff").textContent = ""; $("changes").textContent = "";
+  prog.inDone = prog.outDone = prog.cost = prog.liveIn = prog.liveOut = prog.liveCost = 0; paintUsage();
+  $("progress").style.display = "block"; document.querySelector("#progress .spin").style.display = "";
+  $("livenote").textContent = ""; $("phase").textContent = "starting…";
+  const t0 = performance.now();
+  const timer = setInterval(() => { $("elapsed").textContent = ((performance.now() - t0) / 1000).toFixed(1); }, 100);
+
+  try {
+    const diff = await generateDiff(buildEnvironment(files), $("goal").value, { apiKey: key, model: MODEL, callLlm: streamingCallLlm("Generating diff") });
+    renderDiff(diff);
+    const parsed = parseDiffPerFile(diff);
+    if (!diff.trim() || !parsed.length) {
+      $("changes").textContent = "⚠ The model returned no applicable diff. Try rephrasing the goal.";
+    } else {
+      const applyLlm = streamingCallLlm("Applying diff");
+      const before = { ...files };
+      const updated = await smartapply(diff, files, {
+        apiKey: key, model: APPLY,
+        callLlmForApply: (p, o, d, m, o2) => callLlmForApply(p, o, d, m, { ...o2, callLlm: applyLlm }),
+      });
+      const beforeKeys = new Set(Object.keys(before)), afterKeys = new Set(Object.keys(updated));
+      const added = [...afterKeys].filter((k) => !beforeKeys.has(k));
+      const removed = [...beforeKeys].filter((k) => !afterKeys.has(k));
+      const changed = [...afterKeys].filter((k) => beforeKeys.has(k) && before[k] !== updated[k]);
+      files = updated;
+      if (active == null || files[active] === undefined) active = fileOrder()[0] || null;
+      renderTabs(); loadEditor(); refreshPreview();
+      showChanges(added, removed, changed);
+      $("undo").disabled = false;
+    }
+    $("phase").textContent = "done"; document.querySelector("#progress .spin").style.display = "none";
+  } catch (e) {
+    $("changes").textContent = "Error: " + e.message;
+    $("progress").style.display = "none";
+  } finally {
+    clearInterval(timer); $("run").disabled = false;
+  }
+}
+$("run").addEventListener("click", run);
+$("undo").addEventListener("click", () => {
+  if (!undoSnapshot) return;
+  files = undoSnapshot; undoSnapshot = null;
+  if (active == null || files[active] === undefined) active = fileOrder()[0] || null;
+  renderTabs(); loadEditor(); refreshPreview();
+  $("undo").disabled = true; $("changes").textContent = "↶ reverted to the previous version.";
+});
+
+// ---------- boot ----------
+(async () => {
+  renderModelRow("diff"); renderModelRow("apply");
+  try { await handleRedirect(); } catch (e) { $("status").textContent = "sign-in error: " + e.message; }
+  renderAuth();
+  files = await loadSeed();
+  active = fileOrder().includes("scene.json") ? "scene.json" : (fileOrder()[0] || null);
+  renderTabs(); loadEditor(); refreshPreview();
+  loadModels();
+})();
+</script>
+</body>
+</html>

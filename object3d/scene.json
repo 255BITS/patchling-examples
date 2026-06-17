@@ -1,0 +1,16 @@
+{
+  "name": "GptdiffObject",
+  "shape": "torusKnot",
+  "color": "#7c5cff",
+  "metalness": 0.6,
+  "roughness": 0.25,
+  "wireframe": false,
+  "useTexture": true,
+  "textureRepeat": 2,
+  "background": "#0b0d17",
+  "lightColor": "#ffffff",
+  "lightIntensity": 1.3,
+  "rimColor": "#22d3ee",
+  "autoRotate": true,
+  "rotateSpeed": 1.0
+}

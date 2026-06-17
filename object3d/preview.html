@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>3D object</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; color-scheme: normal; }
+  #app { position: absolute; inset: 0; }
+  #app canvas { display: block; }
+</style>
+<!-- include-config: scene.json -->
+<!-- include-texture: texture.svg -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- Each piece of the object is its own file. gptdiff edits these directly. -->
+  <script src="object.js"></script>
+  <script src="material.js"></script>
+  <script src="effects.js"></script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+    import { OBJExporter } from "three/addons/exporters/OBJExporter.js";
+
+    const cfg = window.SCENE_CONFIG || {};
+    const G = window.GPTDIFF3D || {};
+    const host = document.getElementById("app");
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(host.clientWidth, host.clientHeight);
+    host.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    if (cfg.background) scene.background = new THREE.Color(cfg.background);
+
+    const camera = new THREE.PerspectiveCamera(45, host.clientWidth / host.clientHeight, 0.1, 100);
+    camera.position.set(0, 0.4, 4);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+
+    // Texture built from texture.svg (data URL injected by the bundler).
+    let texture = null;
+    if (window.SCENE_TEXTURE_SVG) {
+      texture = new THREE.TextureLoader().load(window.SCENE_TEXTURE_SVG, () => renderer.render(scene, camera));
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    }
+
+    const geometry = G.geometry ? G.geometry(THREE, cfg) : new THREE.TorusKnotGeometry(0.85, 0.28, 200, 32);
+    const material = G.material ? G.material(THREE, cfg, texture) : new THREE.MeshStandardMaterial({ color: 0x7c5cff });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = cfg.name || "GptdiffObject";
+    scene.add(mesh);
+
+    const update = G.effects ? G.effects(THREE, scene, mesh, cfg) : null;
+
+    const clock = new THREE.Clock();
+    function tick() {
+      const t = clock.getElapsedTime();
+      if (typeof update === "function") update(t, mesh);
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(tick);
+    }
+    tick();
+
+    function resize() {
+      const w = host.clientWidth, h = host.clientHeight;
+      camera.aspect = w / h; camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+    window.addEventListener("resize", resize);
+
+    // ---- export to a real 3D-modelling file (handled by the parent page) ----
+    function exportModel(format) {
+      const r = mesh.rotation.clone();
+      mesh.rotation.set(0, 0, 0);           // bake a clean, un-spun pose
+      mesh.updateMatrixWorld(true);
+      const restore = () => { mesh.rotation.copy(r); };
+      if (format === "obj") {
+        const text = new OBJExporter().parse(mesh);
+        restore();
+        parent.postMessage({ type: "gptdiff3d:exported", format: "obj", text, filename: "model.obj" }, "*");
+      } else {
+        new GLTFExporter().parse(mesh, (buffer) => {
+          restore();
+          parent.postMessage({ type: "gptdiff3d:exported", format: "glb", buffer, filename: "model.glb" }, "*", [buffer]);
+        }, (err) => { restore(); parent.postMessage({ type: "gptdiff3d:error", message: String(err) }, "*"); },
+        { binary: true });
+      }
+    }
+    window.addEventListener("message", (e) => {
+      const d = e.data || {};
+      if (d.type === "gptdiff3d:export") exportModel(d.format);
+      else if (d.type === "gptdiff3d:reset") controls.reset();
+    });
+    parent.postMessage({ type: "gptdiff3d:ready" }, "*");
+  </script>
+</body>
+</html>

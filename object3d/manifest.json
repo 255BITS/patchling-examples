@@ -1,0 +1,10 @@
+{
+  "files": [
+    "preview.html",
+    "scene.json",
+    "object.js",
+    "material.js",
+    "texture.svg",
+    "effects.js"
+  ]
+}
