@@ -352,12 +352,12 @@ const fmtCost = (c) => "$" + (c || 0).toFixed(5);
 const n = (x) => (x || 0).toLocaleString();
 const words = (s) => (String(s).match(/\S+/g) || []).length; // ~tokens, counted as words
 // inDone/outDone = exact tokens from finished calls; liveIn/liveOut = in-flight word estimates.
-const prog = { inDone: 0, outDone: 0, cost: 0, liveIn: 0, liveOut: 0 };
+const prog = { inDone: 0, outDone: 0, cost: 0, liveIn: 0, liveOut: 0, liveCost: 0 };
 
 function paintUsage() {
   $("inTok").textContent = n(prog.inDone + prog.liveIn);
   $("outTok").textContent = n(prog.outDone + prog.liveOut);
-  $("cost").textContent = fmtCost(prog.cost);
+  $("cost").textContent = fmtCost(prog.cost + prog.liveCost); // committed + in-flight estimate
 }
 
 function streamingCallLlm(phase) {
@@ -365,7 +365,13 @@ function streamingCallLlm(phase) {
     $("phase").textContent = phase;
     // Input estimate from the prompt (words ≈ tokens) — shown immediately, fixed for the call.
     const inEst = messages.reduce((s, m) => s + words(typeof m.content === "string" ? m.content : JSON.stringify(m.content)), 0);
-    prog.liveIn += inEst; paintUsage();
+    // Live cost estimate = approximated tokens × the selected model's per-token price
+    // (USD per 1M from the model list). Replaced by NanoGPT's exact figure on commit.
+    const price = priceOf(model) || {};
+    const inPer = (Number(price.prompt) || 0) / 1e6, outPer = (Number(price.completion) || 0) / 1e6;
+    let prevOut = 0, myCost = 0;
+    const recost = () => { const c = inEst * inPer + prevOut * outPer; prog.liveCost += c - myCost; myCost = c; };
+    prog.liveIn += inEst; recost(); paintUsage();
 
     const endpoint = (baseUrl || `${NANOGPT}/api/v1/`).replace(/\/+$/, "") + "/chat/completions";
     let r;
@@ -374,12 +380,12 @@ function streamingCallLlm(phase) {
         method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, stream: true }),
       });
-    } catch (e) { prog.liveIn -= inEst; throw e; }
-    if (!r.ok) { prog.liveIn -= inEst; throw new Error(`LLM ${r.status}: ${await r.text()}`); }
+    } catch (e) { prog.liveIn -= inEst; prog.liveCost -= myCost; throw e; }
+    if (!r.ok) { prog.liveIn -= inEst; prog.liveCost -= myCost; throw new Error(`LLM ${r.status}: ${await r.text()}`); }
 
     const reader = r.body.getReader();
     const dec = new TextDecoder();
-    let buf = "", content = "", reasoning = "", pricing = null, lastTick = 0, prevOut = 0;
+    let buf = "", content = "", reasoning = "", pricing = null, lastTick = 0;
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -399,7 +405,7 @@ function streamingCallLlm(phase) {
           if (d.content || d.reasoning) {
             // recount from accumulated text (avoids miscounting words split across chunks)
             const cur = words(content) + words(reasoning);
-            prog.liveOut += cur - prevOut; prevOut = cur;
+            prog.liveOut += cur - prevOut; prevOut = cur; recost();
             const now = performance.now();
             if (now - lastTick > 80) { lastTick = now; paintUsage(); $("live").textContent = content ? "" : "· thinking…"; }
           }
@@ -408,10 +414,10 @@ function streamingCallLlm(phase) {
       }
     }
     // Commit: drop this call's estimates, add exact tokens (fall back to the estimate).
-    prog.liveIn -= inEst; prog.liveOut -= prevOut;
+    prog.liveIn -= inEst; prog.liveOut -= prevOut; prog.liveCost -= myCost;
     prog.inDone += pricing?.inputTokens ?? inEst;
     prog.outDone += pricing?.outputTokens ?? prevOut;
-    prog.cost += pricing?.costUsd ?? pricing?.cost ?? 0;
+    prog.cost += pricing?.costUsd ?? pricing?.cost ?? myCost; // exact, else keep the estimate
     paintUsage(); $("live").textContent = "";
     return { choices: [{ message: { content } }] };
   };
@@ -446,7 +452,7 @@ async function run() {
   const files = { [path]: content };
   $("run").disabled = true; curPhase = "";
   $("diff").textContent = ""; $("result").textContent = "";
-  prog.inDone = prog.outDone = prog.cost = prog.liveIn = prog.liveOut = 0; paintUsage();
+  prog.inDone = prog.outDone = prog.cost = prog.liveIn = prog.liveOut = prog.liveCost = 0; paintUsage();
   $("progress").style.display = "block";
   document.querySelector("#progress .spin").style.display = "";
   $("live").textContent = ""; $("phase").textContent = "starting…";
