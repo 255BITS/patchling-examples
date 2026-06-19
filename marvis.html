@@ -153,7 +153,7 @@ const EMBEDDED_CONFIG = {
     h1: "◉ MARVIS",
     heroName: "MARVIS",
     role: `Mostly Autonomous, Rather Volatile Intelligence System · <span class="glow">open-weights, and yours</span>`,
-    tagline: `<b>Open-weights, and yours forever (#keep4o).</b> Its <span class="glow">soul</span>, <span class="glow">mood</span> and <span class="glow">memory</span> are plain files you own. Chat with it here; reshape who it is below with one <b>gptdiff</b> pass. <b>🔗 share</b> folds the whole being into the link — no server, no account.`,
+    tagline: `<b>Open-weights, and yours forever (#keep4o).</b> Its <span class="glow">soul</span>, <span class="glow">mood</span> and <span class="glow">memory</span> are plain files you own. Reshape who it is below with one <b>gptdiff</b> pass. <b>🔗 share</b> folds the whole being into the link — no server, no account.`,
     sayPlaceholder: "message MARVIS…",
   },
 };
@@ -734,7 +734,14 @@ function liveBubble() {
 
 function showChatCost(pricing) {
   if (!pricing) { $("chatmeta").textContent = ""; return; }
-  const inT = pricing.inputTokens || 0, outT = pricing.outputTokens || 0, cost = pricing.costUsd ?? pricing.cost ?? 0;
+  const inT = pricing.inputTokens || 0, outT = pricing.outputTokens || 0;
+  // x_nanogpt_pricing carries token counts but no usable total cost — derive it from the
+  // model's per-token price (same as the gptdiff path), falling back to any cost it does send.
+  const payloadCost = pricing.costUsd ?? pricing.cost ?? 0;
+  const price = priceOf(MODEL) || {};
+  const cost = payloadCost > 0
+    ? payloadCost
+    : inT * (Number(price.prompt) || 0) / 1e6 + outT * (Number(price.completion) || 0) / 1e6;
   prog.inDone += inT; prog.outDone += outT; prog.cost += cost; paintUsage();
   $("chatmeta").textContent = `↓ ${n(inT)} in · ↑ ${n(outT)} out · ${fmtCost(cost)} · ${MODEL}`;
 }
