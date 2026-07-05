@@ -2,7 +2,7 @@
 
 Runnable, self-contained example apps built on **[patchling](https://patchling.app)**
 ([source](https://github.com/255BITS/patchling)): **generate a unified diff and smartapply it**,
-entirely in the browser, powered by [NanoGPT](https://nano-gpt.com/r/mgzwtqjw). No server, no build,
+entirely in the browser, powered by [NanoGPT](https://nano-gpt.com/r/FXrrGWE4). No server, no build,
 no install.
 
 **Live demos** · [diff → smartapply](https://255bits.github.io/patchling-examples/) · [realtime video overlay](https://255bits.github.io/patchling-examples/overlay.html) · [3d object studio](https://255bits.github.io/patchling-examples/object3d.html) · [AI-liftoff comic](https://255bits.github.io/patchling-examples/comic.html) · [MARVIS](https://255bits.github.io/patchling-examples/marvis.html) · [picture me as…](https://255bits.github.io/patchling-examples/pictureme.html) · [count to 100](https://255bits.github.io/patchling-examples/count.html)
@@ -27,7 +27,7 @@ Open the page, authenticate one of two ways, then edit the file + goal and hit *
 
 - **Sign in with NanoGPT** — browser OAuth (PKCE). Requires the page be served over http
   (loopback) or https, since OAuth redirects there. The key is stored in `localStorage`.
-- **paste key** — paste a key from [nano-gpt.com](https://nano-gpt.com/r/mgzwtqjw) → Settings → API. Works even when
+- **paste key** — paste a key from [nano-gpt.com](https://nano-gpt.com/r/FXrrGWE4) → Settings → API. Works even when
   the file is opened directly (`file://`).
 
 ### Serve it locally (for OAuth)

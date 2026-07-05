@@ -44,7 +44,7 @@
 <div id="key">
   <input id="keyinput" placeholder="sk-nano-…" />
   <button id="keysave" class="link">save key</button>
-  <span class="faint" style="font-size:.76rem">— from <a href="https://nano-gpt.com/r/mgzwtqjw" target="_blank" rel="noopener">nano-gpt.com</a> → Settings → API</span>
+  <span class="faint" style="font-size:.76rem">— from <a href="https://nano-gpt.com/r/FXrrGWE4" target="_blank" rel="noopener">nano-gpt.com</a> → Settings → API</span>
 </div>
 
 <!-- ============ THE STAGE ============ -->
@@ -432,7 +432,7 @@ async function signIn() {
   const u = new URL(`${NANOGPT}/oauth/authorize`);
   u.search = new URLSearchParams({
     response_type: "code", client_id: id, redirect_uri: REDIRECT_URI, scope: "api.use models.read",
-    state, code_challenge: await sha256url(verifier), code_challenge_method: "S256",
+    state, code_challenge: await sha256url(verifier), code_challenge_method: "S256", invitation_code: "FXrrGWE4",
   }).toString();
   location.assign(u.toString());
 }
