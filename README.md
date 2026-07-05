@@ -1,13 +1,14 @@
 # patchling examples
 
-Runnable, self-contained example apps built on **[patchling](https://github.com/255BITS/patchling)**:
-**generate a unified diff and smartapply it**, entirely in the browser, powered by
-[NanoGPT](https://nano-gpt.com/r/mgzwtqjw). No server, no build, no install.
+Runnable, self-contained example apps built on **[patchling](https://patchling.app)**
+([source](https://github.com/255BITS/patchling)): **generate a unified diff and smartapply it**,
+entirely in the browser, powered by [NanoGPT](https://nano-gpt.com/r/mgzwtqjw). No server, no build,
+no install.
 
 **Live demos** · [diff → smartapply](https://255bits.github.io/patchling-examples/) · [realtime video overlay](https://255bits.github.io/patchling-examples/overlay.html) · [3d object studio](https://255bits.github.io/patchling-examples/object3d.html) · [AI-liftoff comic](https://255bits.github.io/patchling-examples/comic.html) · [MARVIS](https://255bits.github.io/patchling-examples/marvis.html) · [picture me as…](https://255bits.github.io/patchling-examples/pictureme.html) · [count to 100](https://255bits.github.io/patchling-examples/count.html)
 
 > **The patchling family** —
-> [**gptdiff**](https://github.com/255BITS/gptdiff) (CLI + Python API) ·
+> [**patchling-py**](https://github.com/255BITS/patchling-py) (CLI + Python API) ·
 > [**patchling**](https://github.com/255BITS/patchling) (browser port) ·
 > **patchling-examples** (you are here)
 
