@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>gptdiff · count to 100</title>
+<title>patchling · count to 100</title>
 <style>
   :root { color-scheme: light dark; }
   body { font: 15px/1.5 system-ui, sans-serif; max-width: 900px; margin: 1.5rem auto; padding: 0 1rem; }
@@ -79,12 +79,12 @@
   #banner .sep { opacity: .4; margin: 0 .5rem; }
 </style>
 <div id="banner">
-  <a href="https://github.com/255BITS/gptdiff-js" target="_blank" rel="noopener">gptdiff-js</a> — run gptdiff in the browser, no command line
+  <a href="https://github.com/255BITS/patchling" target="_blank" rel="noopener">patchling</a> — run patchling in the browser, no command line
   <span class="sep">·</span>
-  <a href="https://github.com/255BITS/gptdiff-js-examples" target="_blank" rel="noopener">more examples</a>
+  <a href="https://github.com/255BITS/patchling-examples" target="_blank" rel="noopener">more examples</a>
 </div>
 <header>
-  <h1>gptdiff · count to 100</h1>
+  <h1>patchling · count to 100</h1>
   <span id="status">checking…</span>
   <a id="signin" href="#" style="display:none">Sign in with NanoGPT</a>
   <button id="pastebtn" class="link" style="display:none">paste key</button>
@@ -93,7 +93,7 @@
 
 <p class="dim" style="font-size:.88rem;margin:.3rem 0 0">
   A reliability loop. One uneditable file — <b><code>count</code></b> — holding a single number. Each step,
-  gptdiff is asked to <b>add 1</b>, the diff is applied, and the result is <b>verified</b> to be exactly the
+  patchling is asked to <b>add 1</b>, the diff is applied, and the result is <b>verified</b> to be exactly the
   previous number plus one. The <code>for</code> loop starts, steps, and stops: it <b>passes</b> when it reaches
   100, <b>fails</b> the instant a step doesn't land on n+1, or <b>stops</b> when you press Stop.
 </p>
@@ -122,7 +122,7 @@
     <button id="start" class="go primary" disabled>▶ Count to 100</button>
     <button id="stop" class="go" disabled>■ Stop</button>
   </div>
-  <div id="verdict" class="verdict dim">Ready — counts the file 1 → 100, one gptdiff edit per step, verifying each lands on n+1.</div>
+  <div id="verdict" class="verdict dim">Ready — counts the file 1 → 100, one patchling edit per step, verifying each lands on n+1.</div>
 
   <div id="progress">
     <span class="spin">◐</span> <b id="phase">starting…</b> · ⏱ <span id="elapsed">0.0</span>s · step <span id="step">0</span>
@@ -139,12 +139,12 @@
 </div>
 
 <footer style="margin-top:2rem;padding-top:1rem;border-top:1px solid #8883;font-size:.85rem">
-  <b>Other examples</b> · <a href="index.html">gptdiff · diff → smartapply</a> · <a href="overlay.html">🎬 realtime video overlay</a> · <a href="object3d.html">🧊 3d object studio</a> · <a href="comic.html">📖 AI-liftoff comic</a> · <a href="marvis.html">🤖 MARVIS</a>
+  <b>Other examples</b> · <a href="index.html">patchling · diff → smartapply</a> · <a href="overlay.html">🎬 realtime video overlay</a> · <a href="object3d.html">🧊 3d object studio</a> · <a href="comic.html">📖 AI-liftoff comic</a> · <a href="marvis.html">🤖 MARVIS</a>
 </footer>
 
 <script type="module">
 import { buildEnvironment, generateDiff, smartapply, parseDiffPerFile, callLlmForApply, setEnv }
-  from "https://esm.sh/gh/255BITS/gptdiff-js";
+  from "https://esm.sh/patchling";
 
 const DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
 const APPLY_DEFAULT = "xiaomi/mimo-v2.5-pro-ultraspeed"; // smartapply default (fast, mechanical)
@@ -178,7 +178,7 @@ async function clientId() {
   if (cached && cached.redirect === REDIRECT_URI) return cached.id;
   const r = await fetch(`${NANOGPT}/oauth/register`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client_name: "gptdiff count", redirect_uris: [REDIRECT_URI],
+    body: JSON.stringify({ client_name: "patchling count", redirect_uris: [REDIRECT_URI],
       grant_types: ["authorization_code"], response_types: ["code"], token_endpoint_auth_method: "none" }),
   });
   if (!r.ok) throw new Error("register " + r.status);
@@ -352,7 +352,7 @@ $("modelsearch").addEventListener("keydown", (e) => {
   if (e.key === "Enter") { const v = $("modelsearch").value.trim(); if (v) { setModel(v, pickerTarget); $("modelpicker").style.display = "none"; } }
 });
 
-// ---------- streaming LLM client injected into gptdiff-js ----------
+// ---------- streaming LLM client injected into patchling ----------
 const fmtCost = (c) => "$" + (c || 0).toFixed(5);
 const n = (x) => (x || 0).toLocaleString();
 const words = (s) => (String(s).match(/\S+/g) || []).length; // ~tokens, counted as words
@@ -480,7 +480,7 @@ function logLine(text, cls) {
 }
 function setVerdict(text, cls) { $("verdict").textContent = text; $("verdict").className = "verdict" + (cls ? " " + cls : ""); }
 
-// One step: ask gptdiff to add 1, apply, and verify the result is exactly prev+1.
+// One step: ask patchling to add 1, apply, and verify the result is exactly prev+1.
 // Returns { ok, next, raw }. Throws only on network/abort/LLM errors.
 async function step(key) {
   const before = count;

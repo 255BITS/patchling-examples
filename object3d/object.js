@@ -1,5 +1,5 @@
 // The geometry of the object. Return any THREE.BufferGeometry.
-// gptdiff can swap the shape, change resolution, or build something custom here.
+// patchling can swap the shape, change resolution, or build something custom here.
 window.GPTDIFF3D = window.GPTDIFF3D || {};
 window.GPTDIFF3D.geometry = function (THREE, cfg) {
   switch (cfg.shape) {

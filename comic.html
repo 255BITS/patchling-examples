@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>gptdiff · AI-liftoff comic</title>
+<title>patchling · AI-liftoff comic</title>
 <style>
   :root { color-scheme: light dark; }
   body { font: 15px/1.5 system-ui, sans-serif; max-width: 1320px; margin: 1.2rem auto; padding: 0 1rem; }
@@ -98,12 +98,12 @@
   #banner .sep { opacity: .4; margin: 0 .5rem; }
 </style>
 <div id="banner">
-  <a href="https://github.com/255BITS/gptdiff-js" target="_blank" rel="noopener">gptdiff-js</a> — run gptdiff in the browser, no command line
+  <a href="https://github.com/255BITS/patchling" target="_blank" rel="noopener">patchling</a> — run patchling in the browser, no command line
   <span class="sep">·</span>
-  <a href="https://github.com/255BITS/gptdiff-js-examples" target="_blank" rel="noopener">more examples</a>
+  <a href="https://github.com/255BITS/patchling-examples" target="_blank" rel="noopener">more examples</a>
 </div>
 <header>
-  <h1>gptdiff · AI-liftoff comic</h1>
+  <h1>patchling · AI-liftoff comic</h1>
   <span id="status">checking…</span>
   <a id="signin" href="#" style="display:none">Sign in with NanoGPT</a>
   <button id="pastebtn" class="link" style="display:none">paste key</button>
@@ -112,7 +112,7 @@
 
 <p class="dim" style="font-size:.85rem;margin:.3rem 0 0">
   A comic page built from a <b>multi-file project</b> — a JSON art-direction config (style + character bible) and one
-  JSON file per <b>panel</b> (scene, shot, cast, caption, dialogue, FX). Describe a change and gptdiff rewrites <i>all</i>
+  JSON file per <b>panel</b> (scene, shot, cast, caption, dialogue, FX). Describe a change and patchling rewrites <i>all</i>
   of them (adding or removing panels as it sees fit). The harness then <b>organizes every panel into one prompt</b> and
   draws the whole portrait page in a <b>single image render</b> (the image model is set in <code>config.json</code> —
   <code>ideogram:4@0</code> by default) via NanoGPT. <b>Export</b> the finished page as a PNG.
@@ -135,7 +135,7 @@
 <div class="lab">
   <!-- LEFT: the multi-file project + the goal -->
   <div>
-    <label>Project files <span class="dim">(gptdiff edits, adds &amp; removes these — config + one file per panel)</span></label>
+    <label>Project files <span class="dim">(patchling edits, adds &amp; removes these — config + one file per panel)</span></label>
     <div id="files"></div>
 
     <label id="activelabel" for="editor" style="font-family:ui-monospace,monospace">…</label>
@@ -196,12 +196,12 @@
 <button id="zoomclose" style="display:none">✕ close</button>
 
 <footer style="margin-top:2rem;padding-top:1rem;border-top:1px solid #8883;font-size:.85rem">
-  <b>Other examples</b> · <a href="index.html">gptdiff · diff → smartapply</a> · <a href="overlay.html">🎬 realtime video overlay</a> · <a href="object3d.html">🧊 3d object studio</a> · <a href="marvis.html">🤖 MARVIS</a> · <a href="count.html">🔢 count to 100</a>
+  <b>Other examples</b> · <a href="index.html">patchling · diff → smartapply</a> · <a href="overlay.html">🎬 realtime video overlay</a> · <a href="object3d.html">🧊 3d object studio</a> · <a href="marvis.html">🤖 MARVIS</a> · <a href="count.html">🔢 count to 100</a>
 </footer>
 
 <script type="module">
 import { buildEnvironment, generateDiff, smartapply, parseDiffPerFile, callLlmForApply, setEnv }
-  from "https://esm.sh/gh/255BITS/gptdiff-js";
+  from "https://esm.sh/patchling";
 
 const DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
 const APPLY_DEFAULT = "xiaomi/mimo-v2.5-pro-ultraspeed";
@@ -234,7 +234,7 @@ async function clientId() {
   if (cached && cached.redirect === REDIRECT_URI) return cached.id;
   const r = await fetch(`${NANOGPT}/oauth/register`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client_name: "gptdiff comic", redirect_uris: [REDIRECT_URI],
+    body: JSON.stringify({ client_name: "patchling comic", redirect_uris: [REDIRECT_URI],
       grant_types: ["authorization_code"], response_types: ["code"], token_endpoint_auth_method: "none" }),
   });
   if (!r.ok) throw new Error("register " + r.status);
@@ -390,7 +390,7 @@ $("modelsearch").addEventListener("keydown", (e) => {
   if (e.key === "Enter") { const v = $("modelsearch").value.trim(); if (v) { setModel(v, pickerTarget); $("modelpicker").style.display = "none"; } }
 });
 
-// ---------- streaming LLM client injected into gptdiff-js ----------
+// ---------- streaming LLM client injected into patchling ----------
 const fmtCost = (c) => "$" + (c || 0).toFixed(5);
 const n = (x) => (x || 0).toLocaleString();
 const words = (s) => (String(s).match(/\S+/g) || []).length;

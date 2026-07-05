@@ -1,5 +1,5 @@
 // The surface material. `texture` is built from texture.svg (or null if disabled).
-// gptdiff can retune metalness/roughness, add emissive glow, switch material type, etc.
+// patchling can retune metalness/roughness, add emissive glow, switch material type, etc.
 window.GPTDIFF3D = window.GPTDIFF3D || {};
 window.GPTDIFF3D.material = function (THREE, cfg, texture) {
   const mat = new THREE.MeshStandardMaterial({

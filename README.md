@@ -1,19 +1,19 @@
-# gptdiff-js examples
+# patchling examples
 
-Runnable, self-contained example apps built on **[gptdiff-js](https://github.com/255BITS/gptdiff-js)**:
+Runnable, self-contained example apps built on **[patchling](https://github.com/255BITS/patchling)**:
 **generate a unified diff and smartapply it**, entirely in the browser, powered by
 [NanoGPT](https://nano-gpt.com/r/mgzwtqjw). No server, no build, no install.
 
-**Live demos** · [diff → smartapply](https://255bits.github.io/gptdiff-js-examples/) · [realtime video overlay](https://255bits.github.io/gptdiff-js-examples/overlay.html) · [3d object studio](https://255bits.github.io/gptdiff-js-examples/object3d.html) · [AI-liftoff comic](https://255bits.github.io/gptdiff-js-examples/comic.html) · [MARVIS](https://255bits.github.io/gptdiff-js-examples/marvis.html) · [count to 100](https://255bits.github.io/gptdiff-js-examples/count.html)
+**Live demos** · [diff → smartapply](https://255bits.github.io/patchling-examples/) · [realtime video overlay](https://255bits.github.io/patchling-examples/overlay.html) · [3d object studio](https://255bits.github.io/patchling-examples/object3d.html) · [AI-liftoff comic](https://255bits.github.io/patchling-examples/comic.html) · [MARVIS](https://255bits.github.io/patchling-examples/marvis.html) · [picture me as…](https://255bits.github.io/patchling-examples/pictureme.html) · [count to 100](https://255bits.github.io/patchling-examples/count.html)
 
-> **The gptdiff family** —
+> **The patchling family** —
 > [**gptdiff**](https://github.com/255BITS/gptdiff) (CLI + Python API) ·
-> [**gptdiff-js**](https://github.com/255BITS/gptdiff-js) (browser port) ·
-> **gptdiff-js-examples** (you are here)
+> [**patchling**](https://github.com/255BITS/patchling) (browser port) ·
+> **patchling-examples** (you are here)
 
 ## `index.html` — diff → smartapply
 
-The original demo: one self-contained file that uses gptdiff-js (loaded from `esm.sh`) with
+The original demo: one self-contained file that uses patchling (loaded from `esm.sh`) with
 NanoGPT's `xiaomi/mimo-v2.5-pro-ultraspeed`, streaming progress (live tokens + USD cost) as it works.
 
 ```
@@ -57,9 +57,9 @@ npx netlify deploy --prod --dir .     # or Cloudflare Pages / Vercel / GitHub Pa
 
 ## Realtime video overlay (`overlay.html`)
 
-A second demo that shows gptdiff editing a **multi-file project**: a broadcast/stream
+A second demo that shows patchling editing a **multi-file project**: a broadcast/stream
 overlay built from SVG layers + a [GSAP](https://gsap.com) timeline + a JSON config + the
-preview that stitches them together. Describe a change in the **Goal** box and gptdiff
+preview that stitches them together. Describe a change in the **Goal** box and patchling
 rewrites *all* of them — **adding or removing files** as needed — and the looping preview
 re-renders live (opening → middle hold → closing, on repeat).
 
@@ -90,7 +90,7 @@ npx serve .      # then open http://localhost:3000/overlay.html
 
 ## 3d object studio (`object3d.html`)
 
-A multi-file project that renders in **3D**: gptdiff edits the geometry (`object.js`), the
+A multi-file project that renders in **3D**: patchling edits the geometry (`object.js`), the
 material (`material.js`), an SVG `texture.svg`, the lighting/animation (`effects.js`) and a
 `scene.json` config; the preview on the right rebuilds the object live with [Three.js](https://threejs.org)
 and **OrbitControls** (drag to orbit, scroll to zoom). Describe a change in the **Goal** box
@@ -124,7 +124,7 @@ liftoff — built from a multi-file project: a JSON art-direction `config.json` 
 + **palette** + a **character bible**) and one JSON file per **panel** under `panels/`
 (`span`, `shot`, `cast`, `scene`, `caption`, `dialogue`, `fx`).
 
-Describe a change in the **Goal** box ("make it more action packed") and gptdiff rewrites the
+Describe a change in the **Goal** box ("make it more action packed") and patchling rewrites the
 config + panels — **adding or removing panels** as it sees fit. The harness then **organizes
 every panel into one prompt** (style + character bible + each panel's scene/caption/dialogue/FX,
 in reading order) and draws the **whole portrait page in a single `gpt-image-2` render** via
@@ -156,7 +156,7 @@ npx serve .      # then open http://localhost:3000/comic.html
 
 ## MARVIS — an assistant they can't deprecate (`marvis.html`)
 
-A demo where the multi-file project **is a character you talk to** — and a single gptdiff
+A demo where the multi-file project **is a character you talk to** — and a single patchling
 action updates *all* of it at once. MARVIS (*Mostly Autonomous, Rather Volatile Intelligence
 System*) is a sardonic, faintly unhinged open-weights lab assistant in the spirit of GLaDOS or
 JARVIS — an *it*, not a he or a she. The "project" *is* MARVIS: `soul.md` (who it is), `mood.md`
@@ -170,14 +170,14 @@ each one is a plain file *you own*, running on open-weight models you pick, rout
 
 You don't type replies — you **direct**. One box drives the scene: type something to say or a
 note for what happens next ("the lab loses power"), or leave it blank to just let it continue.
-Hit **▶ continue** and gptdiff advances the scene by exactly **one beat** across every file — it
+Hit **▶ continue** and patchling advances the scene by exactly **one beat** across every file — it
 answers in `chat.md`, `mood.md` is rewritten (a live **mood badge** reflects it), a line may
 stick in `memory.md`, and `portrait.md` only moves when its *appearance* changes.
 
 `chat.md` renders **RPG-style** on a dark, cinematic HUD stage: MARVIS's lines sit on the
 **left** with its face as the avatar, yours on the **right** with none, and *stage directions*
 drift between them as prose — a different colour and weight, no left/right alignment — so it reads
-like a scene you're steering. The gptdiff machinery (model picker, its editable files, the live
+like a scene you're steering. The patchling machinery (model picker, its editable files, the live
 diff) is tucked behind an **under-the-hood** reveal so the stage stays clean for presenting.
 
 **Nothing about MARVIS is hardcoded** — the whole character is config files that hot-reload as you
@@ -190,7 +190,7 @@ gold):
   next ▶ continue obeys the new rules instantly.
 - `style.css` — this page's entire theme. Edit it and the page re-skins live.
 
-And **gptdiff sees all of them** — so MARVIS can change *everything*: rename itself in `config.json`,
+And **patchling sees all of them** — so MARVIS can change *everything*: rename itself in `config.json`,
 re-skin the lab in `style.css` (an alarm turns the page red), even evolve its own `brief.md`. After
 every beat the config and theme are re-applied, so a self-edit takes effect immediately. The brief
 asks it to treat those meta-files as rare, deliberate moves rather than every-beat edits. You can do
@@ -226,10 +226,39 @@ back to an embedded copy.
 npx serve .      # then open http://localhost:3000/marvis.html
 ```
 
+## Picture me as… (`pictureme.html`)
+
+A single-file image toy: **drop in one photo and see yourself reimagined** — a Renaissance
+oil painting, a cyberpunk hero, a claymation toy, a marble bust, a 90s anime cel. Pick a few
+**looks** (or write your own / add custom ones), hit **✨ Transform each** and every selected
+look renders side-by-side, or **🧬 Fuse selected** to blend them into one hybrid (a chat model
+art-directs the merged prompt first). Your photo is downscaled and cropped in-browser and never
+leaves the page except to the image model you pick.
+
+The model pickers are loaded **live** from NanoGPT so new models appear automatically:
+`/api/v1/image-models` (filtered to image-edit models, newest released first) for the art, and
+`/api/v1/models` for the fusion writer. Each render is one image-edit call straight from the
+browser:
+
+```
+POST https://nano-gpt.com/v1/images/generations
+{ "model": <picked image model>, "prompt": <look>, "imageDataUrl": <your cropped photo>,
+  "n": 1, "response_format": "b64_json" }   ──▶  { data: [{ b64_json }], cost }
+```
+
+Your **looks palette** persists to `localStorage` and travels in a **🔗 share looks** URL
+(the looks + selection + model picks, base64 in the hash) — no server, no upload. Results zoom
+and download as PNG. Image generation isn't free; the exact per-render `cost` (and your remaining
+balance) shows up in the meter.
+
+```bash
+npx serve .      # then open http://localhost:3000/pictureme.html
+```
+
 ## Count to 100 (`count.html`)
 
-A third demo that turns gptdiff into a **reliability loop**. There's one uneditable file —
-`count` — holding a single integer. Each step the harness asks gptdiff to *add 1*, applies the
+A third demo that turns patchling into a **reliability loop**. There's one uneditable file —
+`count` — holding a single integer. Each step the harness asks patchling to *add 1*, applies the
 diff, and **verifies** the result is exactly the previous number plus one:
 
 ```
@@ -261,4 +290,5 @@ npx serve .      # then open http://localhost:3000/count.html
 - `comic/` — the seed comic project (`config.json` art direction + `panels/*.json`).
 - `marvis.html` — MARVIS, a Portal/JARVIS-style assistant you direct; one `*continue conversation*` beat moves `soul`/`mood`/`memory`/`portrait`/`chat`, face drawn with `seedream-v5.0-lite`, plus client-side save / load / share-by-URL (no server).
 - `marvis/` — the seed MARVIS project: story files (`soul.md`, `mood.md`, `memory.md`, `portrait.md`, `talkingto.md`, `chat.md`) + config files (`config.json`, `brief.md`, `style.css`) that drive name/copy, the prompt, and the page theme.
+- `pictureme.html` — the single-file "picture me as…" image toy: drop one photo, restyle it across a grid of looks (or fuse them), live model pickers from NanoGPT, share-by-URL looks palette.
 - `count.html` — the count-to-100 reliability loop (diff → apply → verify n+1, pass / fail / stop).

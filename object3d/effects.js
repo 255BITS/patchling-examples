@@ -1,5 +1,5 @@
 // Lighting + animation. Add lights to `scene`, then return an update(timeSeconds, mesh)
-// called every frame. gptdiff can add particles, post-style glow, motion, extra lights…
+// called every frame. patchling can add particles, post-style glow, motion, extra lights…
 window.GPTDIFF3D = window.GPTDIFF3D || {};
 window.GPTDIFF3D.effects = function (THREE, scene, mesh, cfg) {
   const key = new THREE.DirectionalLight(cfg.lightColor || "#ffffff", cfg.lightIntensity ?? 1.3);

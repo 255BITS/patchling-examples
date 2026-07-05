@@ -27,9 +27,9 @@
   @keyframes blink { 50% { opacity: 0; } }
 </style>
 <div id="banner">
-  <a href="https://github.com/255BITS/gptdiff-js" target="_blank" rel="noopener">gptdiff-js</a> — run gptdiff in the browser, no command line
+  <a href="https://github.com/255BITS/patchling" target="_blank" rel="noopener">patchling</a> — run patchling in the browser, no command line
   <span class="sep">·</span>
-  <a href="https://github.com/255BITS/gptdiff-js-examples" target="_blank" rel="noopener">more examples</a>
+  <a href="https://github.com/255BITS/patchling-examples" target="_blank" rel="noopener">more examples</a>
 </div>
 <header>
   <h1 id="appH1">◉ MARVIS</h1>
@@ -124,7 +124,7 @@
 </div>
 
 <footer>
-  <b>More gptdiff examples</b> · <a href="index.html">diff → smartapply</a> · <a href="overlay.html">🎬 video overlay</a> · <a href="object3d.html">🧊 3d studio</a> · <a href="comic.html">📖 comic</a> · <a href="count.html">🔢 count to 100</a>
+  <b>More patchling examples</b> · <a href="index.html">diff → smartapply</a> · <a href="overlay.html">🎬 video overlay</a> · <a href="object3d.html">🧊 3d studio</a> · <a href="comic.html">📖 comic</a> · <a href="count.html">🔢 count to 100</a>
 </footer>
 
 <script type="module">
@@ -142,6 +142,10 @@ const DEFAULT_NOTE_FALLBACK = "Let it drift a little: nudge its mood to match th
 const BRIEF_FALLBACK = "The boss wants to change who this character is. Make that one change real by editing the persona files: mood.md (rewrite), memory.md (append a bullet if worth keeping), soul.md (only for a deep shift), portrait.md (only if the look changes — it re-renders the face), config.json and style.css (only if the request calls for it). You do not have access to chat.md. Apply only the requested change, keep it coherent, invent nothing unrelated.";
 const CONFIG_FILES = new Set(["config.json", "brief.md", "style.css"]); // app/theme/prompt files — tinted gold; MARVIS can edit these too
 
+// The tagline is fixed page chrome, not part of the persona — it lives here as a constant
+// rather than in config.json, so it never gets persisted into a save / share and goes stale.
+const TAGLINE = `<b>Open-weights, and yours forever (#keep4o).</b> Its <span class="glow">soul</span>, <span class="glow">mood</span> and <span class="glow">memory</span> are plain files you own. Reshape who it is below with one <b>patchling</b> pass. <b>🔗 share</b> folds the whole being into the link — no server, no account.`;
+
 // the factory MARVIS, embedded so file:// works offline; the marvis/ folder overrides it when served
 const EMBEDDED_CONFIG = {
   name: "MARVIS",
@@ -153,7 +157,6 @@ const EMBEDDED_CONFIG = {
     h1: "◉ MARVIS",
     heroName: "MARVIS",
     role: `Mostly Autonomous, Rather Volatile Intelligence System · <span class="glow">open-weights, and yours</span>`,
-    tagline: `<b>Open-weights, and yours forever (#keep4o).</b> Its <span class="glow">soul</span>, <span class="glow">mood</span> and <span class="glow">memory</span> are plain files you own. Reshape who it is below with one <b>gptdiff</b> pass. <b>🔗 share</b> folds the whole being into the link — no server, no account.`,
     sayPlaceholder: "message MARVIS…",
   },
 };
@@ -162,7 +165,7 @@ const EMBEDDED_BRIEF = `You are the keeper of MARVIS — a sardonic, brilliant, 
 - mood.md — rewrite to reflect its emotional state after the change.
 - memory.md — if the change is something it should carry forward, append ONE new bullet at the end (newest last). Otherwise leave it.
 - portrait.md — how it looks. ONLY edit it when its visible appearance should change (its glow, expression, the lab around it). Editing it re-renders its face, so leave it alone otherwise.
-- config.json — its name and the page copy (title/tagline/role). Rename it only on a real, earned shift.
+- config.json — its name and the page copy (title/role). Rename it only on a real, earned shift.
 - style.css — the look of the whole page. Re-skin it when the change calls for it (it turns cold and red; it goes warm and gold).
 - brief.md — these very rules. Evolve them only sparingly and on purpose.
 talkingto.md is the boss — read it, never change it. You do NOT have access to chat.md, the live conversation: never write dialogue or narration, and never try to create or edit chat.md. Apply ONLY the change the boss describes, keep it coherent across the files, and invent nothing unrelated. Keep MARVIS deadpan, witty, a little menacing, and ultimately loyal.`;
@@ -370,12 +373,12 @@ Affection, delivered as threat.
 };
 const SEED_ORDER = Object.keys(EMBEDDED_SEED);
 
-// paint the theme NOW, before the (network) gptdiff import — so the page never flashes unstyled
+// paint the theme NOW, before the (network) patchling import — so the page never flashes unstyled
 $("theme").textContent = EMBEDDED_SEED["style.css"];
 
-// ---------- gptdiff-js (dynamic import so the theme above paints first) ----------
+// ---------- patchling (dynamic import so the theme above paints first) ----------
 const { buildEnvironment, generateDiff, smartapply, parseDiffPerFile, callLlmForApply, setEnv } =
-  await import("https://esm.sh/gh/255BITS/gptdiff-js");
+  await import("https://esm.sh/patchling");
 
 // ---------- endpoints + runtime config (filled by applyConfig) ----------
 const DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
@@ -571,7 +574,7 @@ $("modelsearch").addEventListener("keydown", (e) => {
   if (e.key === "Enter") { const v = $("modelsearch").value.trim(); if (v) { setModel(v, pickerTarget); $("modelpicker").style.display = "none"; } }
 });
 
-// ---------- streaming LLM client injected into gptdiff-js ----------
+// ---------- streaming LLM client injected into patchling ----------
 const fmtCost = (c) => "$" + (c || 0).toFixed(5);
 const n = (x) => (x || 0).toLocaleString();
 const words = (s) => (String(s).match(/\S+/g) || []).length;
@@ -641,9 +644,9 @@ function streamingCallLlm(phase) {
 
 // ================= the live chatbot =================
 // A normal streaming chat. Its context is the persona ARTIFACTS (soul, mood, memory,
-// portrait, who it's talking to) — NOT style.css and NOT the gptdiff director brief.
+// portrait, who it's talking to) — NOT style.css and NOT the patchling director brief.
 // Every exchange just appends to chat.md, the rolling log. Changing who it *is* (mood,
-// soul, look, theme) is the separate gptdiff pass below.
+// soul, look, theme) is the separate patchling pass below.
 
 // low-level SSE streamer — fetch + parse, calling onDelta(text) as content arrives
 async function streamCompletion({ key, model, messages, onDelta }) {
@@ -677,7 +680,7 @@ const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 const userLabel = () => { const u = cfg().userNames; return capitalize((Array.isArray(u) && u[0]) || "Boss"); };
 
 // system prompt = the persona artifacts (everything that defines who it is), minus the
-// page theme (style.css) and the gptdiff brief (brief.md, which is about editing files).
+// page theme (style.css) and the patchling brief (brief.md, which is about editing files).
 function chatSystemPrompt() {
   const name = cfg().name || NAME;
   const you = userLabel();
@@ -736,7 +739,7 @@ function showChatCost(pricing) {
   if (!pricing) { $("chatmeta").textContent = ""; return; }
   const inT = pricing.inputTokens || 0, outT = pricing.outputTokens || 0;
   // x_nanogpt_pricing carries token counts but no usable total cost — derive it from the
-  // model's per-token price (same as the gptdiff path), falling back to any cost it does send.
+  // model's per-token price (same as the patchling path), falling back to any cost it does send.
   const payloadCost = pricing.costUsd ?? pricing.cost ?? 0;
   const price = priceOf(MODEL) || {};
   const cost = payloadCost > 0
@@ -807,7 +810,7 @@ function applyConfig() {
   if (copy.h1 != null) $("appH1").innerHTML = copy.h1;
   if (copy.heroName != null) $("heroName").textContent = copy.heroName;
   if (copy.role != null) $("role").innerHTML = copy.role;
-  if (copy.tagline != null) $("tagline").innerHTML = copy.tagline;
+  $("tagline").innerHTML = TAGLINE; // fixed chrome — not read from config.json (so old saves don't pin a stale tagline)
   if (copy.sayPlaceholder != null) $("chatinput").placeholder = copy.sayPlaceholder;
   $("face").alt = NAME;
   renderChat();

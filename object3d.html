@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>gptdiff · 3d object studio</title>
+<title>patchling · 3d object studio</title>
 <style>
   :root { color-scheme: light dark; }
   body { font: 15px/1.5 system-ui, sans-serif; max-width: 1320px; margin: 1.2rem auto; padding: 0 1rem; }
@@ -79,12 +79,12 @@
   #banner .sep { opacity: .4; margin: 0 .5rem; }
 </style>
 <div id="banner">
-  <a href="https://github.com/255BITS/gptdiff-js" target="_blank" rel="noopener">gptdiff-js</a> — run gptdiff in the browser, no command line
+  <a href="https://github.com/255BITS/patchling" target="_blank" rel="noopener">patchling</a> — run patchling in the browser, no command line
   <span class="sep">·</span>
-  <a href="https://github.com/255BITS/gptdiff-js-examples" target="_blank" rel="noopener">more examples</a>
+  <a href="https://github.com/255BITS/patchling-examples" target="_blank" rel="noopener">more examples</a>
 </div>
 <header>
-  <h1>gptdiff · 3d object studio</h1>
+  <h1>patchling · 3d object studio</h1>
   <span id="status">checking…</span>
   <a id="signin" href="#" style="display:none">Sign in with NanoGPT</a>
   <button id="pastebtn" class="link" style="display:none">paste key</button>
@@ -93,7 +93,7 @@
 
 <p class="dim" style="font-size:.85rem;margin:.3rem 0 0">
   A 3D object built from <b>multiple files</b> — the geometry, the material, an SVG texture, the lighting/effects,
-  and a JSON config. Describe a change, and gptdiff rewrites <i>all</i> of them (adding or removing files as needed);
+  and a JSON config. Describe a change, and patchling rewrites <i>all</i> of them (adding or removing files as needed);
   the viewer on the right re-renders live. Drag to orbit, scroll to zoom, then <b>export</b> a <code>.glb</code> /
   <code>.obj</code> you can open in Blender, Three.js, Unity, or any 3D tool.
 </p>
@@ -115,7 +115,7 @@
 <div class="lab">
   <!-- LEFT: the multi-file project + the goal -->
   <div>
-    <label>Project files <span class="dim">(gptdiff edits, adds &amp; removes these)</span></label>
+    <label>Project files <span class="dim">(patchling edits, adds &amp; removes these)</span></label>
     <div id="files"></div>
 
     <label id="activelabel" for="editor" style="font-family:ui-monospace,monospace">…</label>
@@ -166,12 +166,12 @@
 </div>
 
 <footer style="margin-top:2rem;padding-top:1rem;border-top:1px solid #8883;font-size:.85rem">
-  <b>Other examples</b> · <a href="index.html">gptdiff · diff → smartapply</a> · <a href="overlay.html">🎬 realtime video overlay</a> · <a href="comic.html">📖 AI-liftoff comic</a> · <a href="marvis.html">🤖 MARVIS</a> · <a href="count.html">🔢 count to 100</a>
+  <b>Other examples</b> · <a href="index.html">patchling · diff → smartapply</a> · <a href="overlay.html">🎬 realtime video overlay</a> · <a href="comic.html">📖 AI-liftoff comic</a> · <a href="marvis.html">🤖 MARVIS</a> · <a href="count.html">🔢 count to 100</a>
 </footer>
 
 <script type="module">
 import { buildEnvironment, generateDiff, smartapply, parseDiffPerFile, callLlmForApply, setEnv }
-  from "https://esm.sh/gh/255BITS/gptdiff-js";
+  from "https://esm.sh/patchling";
 
 const DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
 const APPLY_DEFAULT = "xiaomi/mimo-v2.5-pro-ultraspeed";
@@ -200,7 +200,7 @@ async function clientId() {
   if (cached && cached.redirect === REDIRECT_URI) return cached.id;
   const r = await fetch(`${NANOGPT}/oauth/register`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client_name: "gptdiff 3d studio", redirect_uris: [REDIRECT_URI],
+    body: JSON.stringify({ client_name: "patchling 3d studio", redirect_uris: [REDIRECT_URI],
       grant_types: ["authorization_code"], response_types: ["code"], token_endpoint_auth_method: "none" }),
   });
   if (!r.ok) throw new Error("register " + r.status);
@@ -354,7 +354,7 @@ $("modelsearch").addEventListener("keydown", (e) => {
   if (e.key === "Enter") { const v = $("modelsearch").value.trim(); if (v) { setModel(v, pickerTarget); $("modelpicker").style.display = "none"; } }
 });
 
-// ---------- streaming LLM client injected into gptdiff-js ----------
+// ---------- streaming LLM client injected into patchling ----------
 const fmtCost = (c) => "$" + (c || 0).toFixed(5);
 const n = (x) => (x || 0).toLocaleString();
 const words = (s) => (String(s).match(/\S+/g) || []).length;
@@ -451,7 +451,7 @@ const EMBEDDED_SEED = {
 <body>
   <div id="app"></div>
 
-  <!-- Each piece of the object is its own file. gptdiff edits these directly. -->
+  <!-- Each piece of the object is its own file. patchling edits these directly. -->
   <script src="object.js"><\/script>
   <script src="material.js"><\/script>
   <script src="effects.js"><\/script>
@@ -560,7 +560,7 @@ const EMBEDDED_SEED = {
 }
 `,
   "object.js": `// The geometry of the object. Return any THREE.BufferGeometry.
-// gptdiff can swap the shape, change resolution, or build something custom here.
+// patchling can swap the shape, change resolution, or build something custom here.
 window.GPTDIFF3D = window.GPTDIFF3D || {};
 window.GPTDIFF3D.geometry = function (THREE, cfg) {
   switch (cfg.shape) {
@@ -575,7 +575,7 @@ window.GPTDIFF3D.geometry = function (THREE, cfg) {
 };
 `,
   "material.js": `// The surface material. \`texture\` is built from texture.svg (or null if disabled).
-// gptdiff can retune metalness/roughness, add emissive glow, switch material type, etc.
+// patchling can retune metalness/roughness, add emissive glow, switch material type, etc.
 window.GPTDIFF3D = window.GPTDIFF3D || {};
 window.GPTDIFF3D.material = function (THREE, cfg, texture) {
   const mat = new THREE.MeshStandardMaterial({
@@ -611,7 +611,7 @@ window.GPTDIFF3D.material = function (THREE, cfg, texture) {
 </svg>
 `,
   "effects.js": `// Lighting + animation. Add lights to \`scene\`, then return an update(timeSeconds, mesh)
-// called every frame. gptdiff can add particles, post-style glow, motion, extra lights…
+// called every frame. patchling can add particles, post-style glow, motion, extra lights…
 window.GPTDIFF3D = window.GPTDIFF3D || {};
 window.GPTDIFF3D.effects = function (THREE, scene, mesh, cfg) {
   const key = new THREE.DirectionalLight(cfg.lightColor || "#ffffff", cfg.lightIntensity ?? 1.3);
