@@ -1,0 +1,16 @@
+[project]
+name = "ink"
+version = "0.1.0"
+description = "A small notebook CLI: add, list, search, and export notes."
+readme = "README.md"
+requires-python = ">=3.9"
+
+[project.scripts]
+ink = "ink.cli:main"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["ink*"]

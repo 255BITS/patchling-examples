@@ -5,7 +5,7 @@ Runnable, self-contained example apps built on **[patchling](https://patchling.a
 entirely in the browser, powered by [NanoGPT](https://nano-gpt.com/r/FXrrGWE4). No server, no build,
 no install.
 
-**Live demos** · [diff → smartapply](https://255bits.github.io/patchling-examples/) · [realtime video overlay](https://255bits.github.io/patchling-examples/overlay.html) · [3d object studio](https://255bits.github.io/patchling-examples/object3d.html) · [AI-liftoff comic](https://255bits.github.io/patchling-examples/comic.html) · [MARVIS](https://255bits.github.io/patchling-examples/marvis.html) · [picture me as…](https://255bits.github.io/patchling-examples/pictureme.html) · [count to 100](https://255bits.github.io/patchling-examples/count.html)
+**Live demos** · [diff → smartapply](https://255bits.github.io/patchling-examples/) · [realtime video overlay](https://255bits.github.io/patchling-examples/overlay.html) · [3d object studio](https://255bits.github.io/patchling-examples/object3d.html) · [AI-liftoff comic](https://255bits.github.io/patchling-examples/comic.html) · [MARVIS](https://255bits.github.io/patchling-examples/marvis.html) · [picture me as…](https://255bits.github.io/patchling-examples/pictureme.html) · [count to 100](https://255bits.github.io/patchling-examples/count.html) · [relevance filter](https://255bits.github.io/patchling-examples/relevance.html)
 
 > **The patchling family** —
 > [**patchling-py**](https://github.com/255BITS/patchling-py) (CLI + Python API) ·
@@ -280,6 +280,41 @@ per-step log show what counting to 100 actually costs on the selected model.
 npx serve .      # then open http://localhost:3000/count.html
 ```
 
+## Relevance filter (`relevance.html`)
+
+An opt-in step in front of diff and apply. `filterRelevant` (JavaScript) and
+`filter_relevant` (Python) ask a cheap model, once per file, whether that file
+is relevant to the task. Only the yeses are passed to `generateDiff` /
+`smartapply` (and the Python equivalents). Anything that is not a leading yes
+or no is kept. The default request is prompt version 3, model
+`xiaomi/mimo-v2.6-flash`, 1024 output tokens, and reasoning effort `low`. The
+cache key includes the file path. Figures quoted elsewhere — Flask recall 1.0
+and 0.8× overhead — are unverified. This repo does not treat them as measured
+results.
+
+The page walks through three hand-labeled sample projects — a small Express
+bookstore API (`shelf`), a Python notebook CLI (`ink`), and a React recipe box
+(`pantry`). Labels live in `relevance/corpus.json` and are what a benchmark
+script should score against: `tasks[].relevant` is the positive class, and
+every other file under that project's root is a negative.
+
+```bash
+node relevance/example.js --check
+node relevance/example.js --project shelf --task paginate-books --dry-run
+python relevance/example.py --check
+python relevance/example.py --project ink --task search-tag --dry-run
+node relevance/offline-check.js
+```
+
+`--check` and `--dry-run` do not call a model. A live run needs `patchling`
+installed and `GPTDIFF_LLM_API_KEY` set; add `--apply` to continue into diff
+and smartapply on the kept files only. Details and the score JSON shape are in
+[`relevance/README.md`](relevance/README.md).
+
+```bash
+npx serve .      # then open http://localhost:3000/relevance.html
+```
+
 ## Files
 
 - `index.html` — the single-file diff → smartapply demo (builds a playable game).
@@ -293,3 +328,5 @@ npx serve .      # then open http://localhost:3000/count.html
 - `marvis/` — the seed MARVIS project: story files (`soul.md`, `mood.md`, `memory.md`, `portrait.md`, `talkingto.md`, `chat.md`) + config files (`config.json`, `brief.md`, `style.css`) that drive name/copy, the prompt, and the page theme.
 - `pictureme.html` — the single-file "picture me as…" image toy: drop one photo, restyle it across a grid of looks (or fuse them), live model pickers from NanoGPT, share-by-URL looks palette.
 - `count.html` — the count-to-100 reliability loop (diff → apply → verify n+1, pass / fail / stop).
+- `relevance.html` — walkthrough of the opt-in relevance filter (`filterRelevant` / `filter_relevant`): one cheap yes/no per file, then diff and apply on the kept files.
+- `relevance/` — the filter implementations, runnable JS and Python examples, the hand-labeled corpus, and three sample projects (`shelf`, `ink`, `pantry`).

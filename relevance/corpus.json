@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "name": "patchling relevance corpus",
+  "description": "Hand-labeled tasks for the opt-in relevance filter. A file is relevant when a correct edit has to modify it, or would be wrong without the symbols that file defines. Every other file under the project root is a negative. Benchmark scripts should score filterRelevant / filter_relevant decisions against tasks[].relevant.",
+  "projects": [
+    {
+      "id": "shelf",
+      "name": "Shelf — Express bookstore API",
+      "language": "javascript",
+      "description": "Inventory API: books, authors, health, and a request log. Prices are integer cents.",
+      "root": "relevance/projects/shelf",
+      "files": [
+        "README.md",
+        "data/seed.json",
+        "package.json",
+        "src/app.js",
+        "src/config.js",
+        "src/db.js",
+        "src/lib/money.js",
+        "src/lib/note.js",
+        "src/lib/slug.js",
+        "src/lib/validate.js",
+        "src/middleware/errors.js",
+        "src/middleware/requestLog.js",
+        "src/notes/note.js",
+        "src/routes/authors.js",
+        "src/routes/books.js",
+        "src/routes/health.js",
+        "src/server.js",
+        "test/authors.test.js",
+        "test/books.test.js",
+        "test/health.test.js",
+        "test/requestLog.test.js"
+      ],
+      "tasks": [
+        {
+          "id": "paginate-books",
+          "task": "GET /books should accept ?cursor and ?limit and return a page plus nextCursor, instead of the whole catalog. Page the array the route already loads. Do not change the database module. Update the book route tests.",
+          "relevant": ["src/routes/books.js", "test/books.test.js"],
+          "notes": "db.listBooks already returns every book. Slicing belongs in the route. The database, seed file, and author routes stay as they are."
+        },
+        {
+          "id": "usd-prices",
+          "task": "When a book is serialized by the books routes, add priceUsd from formatUsd in src/lib/money.js next to the existing priceCents integer. Cover the new field in the book route tests. Do not change the seed data.",
+          "relevant": ["src/lib/money.js", "src/routes/books.js", "test/books.test.js"],
+          "notes": "formatUsd already exists and is unused. The route's publicBook helper is what callers see."
+        },
+        {
+          "id": "request-id",
+          "task": "In the request logger, generate an X-Request-Id when the incoming request does not already have one, set that header on the response, and include the id in the log line. The logger is already mounted. Update the request log tests. Do not add a new middleware file and do not change the error handler.",
+          "relevant": ["src/middleware/requestLog.js", "test/requestLog.test.js"],
+          "notes": "app.js already installs requestLog. The log shape is asserted by formatLog's test."
+        },
+        {
+          "id": "health-counts",
+          "task": "Extend GET /health so the JSON includes how many books are stored and whether the seed file was loaded. The database module already tracks both. Update the health route tests. Leave the books routes alone.",
+          "relevant": ["src/db.js", "src/routes/health.js", "test/health.test.js"],
+          "notes": "The route has to call the existing countBooks and wasSeedLoaded helpers, so the database module is in the edit set. Book serialization is not."
+        },
+        {
+          "id": "path-not-content",
+          "task": "Import the receipt note from src/notes/note.js when checkout finishes. That path is the helper the receipt should use. Do not edit any other file, including a second copy of the same helper text.",
+          "relevant": ["src/notes/note.js"],
+          "notes": "src/lib/note.js and src/notes/note.js are byte-for-byte the same. Only the notes path is relevant. A cache keyed only by content would give both files the same decision."
+        }
+      ]
+    },
+    {
+      "id": "ink",
+      "name": "ink — Python notebook CLI",
+      "language": "python",
+      "description": "Stdlib CLI for a JSON notebook: add, list, search, and a one-file plain-text export.",
+      "root": "relevance/projects/ink",
+      "files": [
+        "README.md",
+        "ink/__init__.py",
+        "ink/__main__.py",
+        "ink/cli.py",
+        "ink/commands/__init__.py",
+        "ink/commands/add.py",
+        "ink/commands/export.py",
+        "ink/commands/list_notes.py",
+        "ink/commands/search.py",
+        "ink/config.py",
+        "ink/format.py",
+        "ink/store.py",
+        "pyproject.toml",
+        "tests/__init__.py",
+        "tests/test_add.py",
+        "tests/test_config.py",
+        "tests/test_export.py",
+        "tests/test_list.py",
+        "tests/test_search.py"
+      ],
+      "tasks": [
+        {
+          "id": "search-tag",
+          "task": "Add ink search --tag TAG so search can require a tag. Filtering belongs in the store; the search command and its CLI flag should pass the tag through. Update the search tests. Do not change add's existing --tag.",
+          "relevant": ["ink/cli.py", "ink/commands/search.py", "ink/store.py", "tests/test_search.py"],
+          "notes": "add already stores tags. search() only matches title and body, and the search subparser has no --tag flag."
+        },
+        {
+          "id": "export-markdown",
+          "task": "ink export --out DIR should write one markdown file per note using the markdown formatter, instead of a single plain-text dump. Update the export tests. The --out flag already exists.",
+          "relevant": ["ink/commands/export.py", "ink/format.py", "tests/test_export.py"],
+          "notes": "as_markdown already exists and export does not call it. cli.py already passes --out through."
+        },
+        {
+          "id": "remember-notebook",
+          "task": "When --notebook is omitted, read the notebook path from the config file. When --notebook is given, save it to the config for next time. Update the config tests. The store should keep taking an explicit path.",
+          "relevant": ["ink/cli.py", "ink/config.py", "tests/test_config.py"],
+          "notes": "load_config and save_config exist and are unused by the CLI, which currently errors when --notebook is missing."
+        },
+        {
+          "id": "reject-empty",
+          "task": "ink add must reject a body that is empty after trimming, print a one-line message to stderr, and exit with status 2. Update the add tests. Do not change argument parsing.",
+          "relevant": ["ink/commands/add.py", "tests/test_add.py"],
+          "notes": "The parser already accepts --body. The empty-body check belongs in the add command."
+        }
+      ]
+    },
+    {
+      "id": "pantry",
+      "name": "Pantry — React recipe box",
+      "language": "javascript",
+      "description": "Local recipe box. Tag filtering works. Search keystrokes are stored and ignored. Detail hides cook time and servings.",
+      "root": "relevance/projects/pantry",
+      "files": [
+        "README.md",
+        "index.html",
+        "package.json",
+        "src/App.jsx",
+        "src/api.js",
+        "src/components/Footer.jsx",
+        "src/components/Header.jsx",
+        "src/components/RecipeDetail.jsx",
+        "src/components/RecipeList.jsx",
+        "src/components/SearchBox.jsx",
+        "src/components/TagPicker.jsx",
+        "src/data/recipes.js",
+        "src/hooks/useRecipes.js",
+        "src/main.jsx",
+        "src/styles.css",
+        "vite.config.js"
+      ],
+      "tasks": [
+        {
+          "id": "live-search",
+          "task": "Filter the recipe list as the user types. The search box already reports every keystroke via onChange. Apply that query inside useRecipes so titles and ingredient lines match, case-insensitive. App should pass the query into the hook. Do not change the list component or the search box.",
+          "relevant": ["src/App.jsx", "src/hooks/useRecipes.js"],
+          "notes": "SearchBox is already a controlled input. App keeps query in state and never uses it to filter. RecipeList renders the array it is given."
+        },
+        {
+          "id": "detail-meta",
+          "task": "Show cook time and servings on the recipe detail view. The open recipe object already has cookMinutes and servings. Only the detail component needs to change.",
+          "relevant": ["src/components/RecipeDetail.jsx"],
+          "notes": "The fields are already on every recipe in src/data/recipes.js. The task names them, so the data file does not need to be edited."
+        },
+        {
+          "id": "favorites",
+          "task": "Add a favorite toggle on the recipe detail. Persist the set of favorite ids in localStorage under the key pantry:favorites. Keep the state in useRecipes, pass it through App, and render the button in the detail view.",
+          "relevant": ["src/App.jsx", "src/components/RecipeDetail.jsx", "src/hooks/useRecipes.js"],
+          "notes": "No favorites code exists yet. The header, list, and data file do not need to change."
+        },
+        {
+          "id": "match-count",
+          "task": "Show the number of recipes that match the current tag in the header, as the text N recipes. The tag filter already lives in useRecipes and App already has the filtered list. Pass the count into Header. Do not change TagPicker.",
+          "relevant": ["src/App.jsx", "src/components/Header.jsx"],
+          "notes": "useRecipes already returns the tag-filtered array. Header currently renders only the site name and tagline."
+        }
+      ]
+    }
+  ]
+}

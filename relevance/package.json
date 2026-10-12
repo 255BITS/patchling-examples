@@ -1,0 +1,6 @@
+{
+  "name": "patchling-relevance-examples",
+  "private": true,
+  "type": "module",
+  "description": "Runnable examples for patchling's opt-in relevance filter. Not published."
+}
