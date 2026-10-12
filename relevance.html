@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>patchling · relevance filter</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 980px; margin: 1.5rem auto; padding: 0 1rem; }
+  header { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+  h1 { font-size: 1.15rem; margin: 0; flex: 1; }
+  h2 { font-size: 1rem; margin: 1.6rem 0 .4rem; }
+  #status { font-size: .78rem; opacity: .6; }
+  a, button.link { font-size: .78rem; background: none; border: none; color: #2563eb; cursor: pointer; padding: 0; }
+  p { margin: .4rem 0; }
+  label { display: block; font-size: .8rem; opacity: .7; margin: .8rem 0 .2rem; }
+  input, select, textarea { width: 100%; box-sizing: border-box; font: inherit; padding: .45rem .5rem; border-radius: .5rem; border: 1px solid #8888; background: transparent; color: inherit; }
+  button.go { font: inherit; padding: .55rem 1rem; border-radius: .5rem; border: 1px solid #8888; cursor: pointer; background: #8881; margin-top: .8rem; }
+  button.go:disabled { opacity: .5; cursor: default; }
+  pre, code { font-family: ui-monospace, monospace; font-size: 13px; }
+  pre { white-space: pre-wrap; word-break: break-word; background: #8881; border-radius: .5rem; padding: .8rem; margin: .4rem 0 0; max-height: 320px; overflow: auto; }
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; margin: .8rem 0 0; }
+  .step { border: 1px solid #8884; border-radius: .5rem; padding: .55rem .7rem; background: #8881; }
+  .step b { display: block; font-size: .78rem; letter-spacing: .02em; }
+  .step span { font-size: .85rem; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+  .files { border: 1px solid #8884; border-radius: .5rem; max-height: 420px; overflow: auto; }
+  .files button { display: flex; justify-content: space-between; gap: .6rem; width: 100%; text-align: left; font: 12px/1.4 ui-monospace, monospace; padding: .35rem .6rem; border: none; border-bottom: 1px solid #8882; background: transparent; color: inherit; cursor: pointer; }
+  .files button:hover, .files button.on { background: #2563eb18; }
+.files button.on { box-shadow: inset 3px 0 0 #2563eb; }
+  .pill { font-family: system-ui, sans-serif; font-size: 10px; padding: .05rem .4rem; border-radius: 999px; white-space: nowrap; }
+  .pill.gold { background: #f59e0b22; color: #b45309; }
+  .pill.yes { background: #16a34a22; color: #15803d; }
+  .pill.no { background: #8882; color: inherit; opacity: .75; }
+  .pill.miss { background: #dc262622; color: #b91c1c; }
+  .pill.extra { background: #d9770622; color: #b45309; }
+  .muted { opacity: .7; font-size: .85rem; }
+  #key { display: none; margin-top: .5rem; }
+  #key input { max-width: 420px; display: inline-block; width: auto; }
+  #progress { display: none; margin-top: .8rem; padding: .7rem .9rem; border: 1px solid #8884; border-radius: .5rem; background: #8881; font-size: 13px; }
+  #banner { font-size: .8rem; text-align: center; padding: .5rem 1rem; margin: -1.5rem -1rem 1.2rem; border-bottom: 1px solid #8883; background: #8881; }
+  #banner a { font-size: inherit; }
+  #banner .sep { opacity: .4; margin: 0 .5rem; }
+  .diff .add { color: #1a7f37; } .diff .del { color: #cf222e; } .diff .hdr { opacity: .6; }
+  .grade { font-family: ui-monospace, monospace; font-size: 13px; margin-top: .6rem; }
+#misses { white-space: pre-wrap; }
+  @media (max-width: 760px) {
+    .steps, .row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div id="banner">
+  <a href="https://patchling.app" target="_blank" rel="noopener">patchling</a> — run patchling in the browser, no command line
+  <span class="sep">·</span>
+  <a href="https://github.com/255BITS/patchling-examples" target="_blank" rel="noopener">more examples</a>
+</div>
+<header>
+  <h1>patchling · relevance filter</h1>
+  <span id="status">checking…</span>
+  <a id="signin" href="#" style="display:none">Sign in with NanoGPT</a>
+  <button id="pastebtn" class="link" style="display:none">paste key</button>
+  <button id="signout" class="link" style="display:none">sign out</button>
+</header>
+<div id="key">
+  <input id="keyinput" placeholder="sk-nano-…" />
+  <button id="keysave" class="link">save</button>
+  <span class="muted">— from <a href="https://nano-gpt.com/r/FXrrGWE4" target="_blank" rel="noopener">nano-gpt.com</a> → Settings → API</span>
+</div>
+
+<p>
+  Opt-in. <code>generateDiff</code> / <code>smartapply</code> still see whatever map you hand them.
+  <code>filterRelevant</code> (JavaScript) and <code>filter_relevant</code> (Python) ask a cheap model,
+  once per file, “is this file relevant to the task?” — yes or no — and only the yeses go on.
+  An answer that is not a clear yes or no is kept, so a confused reply cannot drop a file the edit needs.
+</p>
+<div class="steps">
+  <div class="step"><b>1 · files</b><span>The whole project, as a path → text map.</span></div>
+  <div class="step"><b>2 · yes / no</b><span>One short call per file on a cheap model.</span></div>
+  <div class="step"><b>3 · diff</b><span><code>generateDiff</code> sees only the kept files.</span></div>
+  <div class="step"><b>4 · apply</b><span><code>smartapply</code> runs on that same map.</span></div>
+</div>
+
+<h2>Three labeled projects</h2>
+<p class="muted">
+  A bookstore Express API, a Python notebook CLI, and a React recipe box.
+  Each task has a hand-labeled list of relevant files in <code>relevance/corpus.json</code>.
+  The labels are the files a correct edit has to modify, or has to see. The filter does not get to read them.
+</p>
+
+<div class="row">
+  <div>
+    <label for="project">Project</label>
+    <select id="project"></select>
+  </div>
+  <div>
+    <label for="task">Task</label>
+    <select id="task"></select>
+  </div>
+</div>
+<p id="tasktext"></p>
+<p id="taskmeta" class="muted"></p>
+
+<div class="row">
+  <div>
+    <label>Files <span class="muted">— click one to read it and the yes/no prompt</span></label>
+    <div id="files" class="files"></div>
+  </div>
+  <div>
+    <label id="filelabel">File</label>
+    <pre id="filebody">Loading the sample projects…</pre>
+  </div>
+</div>
+<label>Prompt the cheap model sees for this file</label>
+<pre id="prompt"></pre>
+
+<div class="row">
+  <div>
+    <label for="filtermodel">Filter model (cheap yes/no)</label>
+    <input id="filtermodel" />
+  </div>
+  <div>
+    <label for="diffmodel">Diff / apply model</label>
+    <input id="diffmodel" />
+  </div>
+</div>
+
+<button id="run" class="go">Ask the filter</button>
+<button id="apply" class="go" disabled>Diff &amp; apply the kept files</button>
+
+<div id="progress">
+  <b id="phase">starting…</b>
+  <div id="usage" class="muted"></div>
+  <div id="grade" class="grade"></div>
+  <div id="misses" class="muted"></div>
+</div>
+
+<label>Generated diff <span class="muted">— only the files the filter kept</span></label>
+<pre id="diff" class="diff">Run the filter, then diff the kept files. Irrelevant files are not in the prompt.</pre>
+
+<h2>JavaScript</h2>
+<pre>import { filterRelevant } from "./relevance/filterRelevant.js";
+import { buildEnvironment, generateDiff, smartapply, callLlm } from "patchling";
+
+const filtered = await filterRelevant(files, task, {
+  model: "xiaomi/mimo-v2.5-pro-ultraspeed",
+  callLlm: (req) => callLlm(Object.assign({}, req, { apiKey })),
+});
+
+const diff = await generateDiff(buildEnvironment(filtered.relevant), task, { apiKey });
+const updated = await smartapply(diff, filtered.relevant, { apiKey });</pre>
+<p class="muted"><code>node relevance/example.js --check</code> validates the labels. Add <code>--project shelf --task paginate-books</code> to call the model, and <code>--apply</code> to continue into generateDiff and smartapply. <code>--dry-run</code> prints one prompt and does not call anything.</p>
+
+<h2>Python</h2>
+<pre>from patchling import build_environment, generate_diff, smartapply, call_llm
+from filter_relevant import filter_relevant
+
+filtered = filter_relevant(
+    files,
+    task,
+    call_llm=call_llm,
+    api_key=api_key,
+    base_url=base_url,
+)
+diff = generate_diff(build_environment(filtered["relevant"]), task, api_key=api_key)
+updated = smartapply(diff, filtered["relevant"], api_key=api_key)</pre>
+<p class="muted"><code>python relevance/example.py --check</code> is the same check. <code>--score run.json</code> reports precision and recall against the hand labels. The decisions JSON is what <code>--out</code> writes.</p>
+
+<h2>What “relevant” means in the labels</h2>
+<p>
+  A file is relevant when the change has to modify it, or would be wrong without the symbols it defines.
+  Sharing a topic is not enough — the health task does not include the books route, and the recipe detail task does not include the data file that already holds <code>cookMinutes</code>.
+  That is the positive class a benchmark should score. Every other file under the project root is a negative.
+</p>
+
+<footer style="margin-top:2rem;padding-top:1rem;border-top:1px solid #8883;font-size:.85rem">
+  <b>Other examples</b> · <a href="index.html">patchling · diff → smartapply</a> · <a href="overlay.html">🎬 realtime video overlay</a> · <a href="object3d.html">🧊 3d object studio</a> · <a href="comic.html">📖 AI-liftoff comic</a> · <a href="marvis.html">🤖 MARVIS</a> · <a href="pictureme.html">🪞 picture me as…</a> · <a href="count.html">🔢 count to 100</a>
+</footer>
+
+<script type="module">
+import { filterRelevant, buildPrompt, gradeDecisions, CHEAP_MODEL } from "./relevance/filterRelevant.js";
+
+const NANOGPT = "https://nano-gpt.com";
+const $ = (id) => document.getElementById(id);
+const FILTER_KEY = "ngpt_filter_model";
+const DIFF_KEY = "ngpt_filter_diff_model";
+
+if (location.hostname === "127.0.0.1") location.hostname = "localhost";
+
+const getKey = () => localStorage.getItem("ngpt_key");
+const setKey = (k) => { k ? localStorage.setItem("ngpt_key", k) : localStorage.removeItem("ngpt_key"); };
+$("filtermodel").value = localStorage.getItem(FILTER_KEY) || CHEAP_MODEL;
+$("diffmodel").value = localStorage.getItem(DIFF_KEY) || CHEAP_MODEL;
+$("filtermodel").addEventListener("change", () => localStorage.setItem(FILTER_KEY, $("filtermodel").value.trim()));
+$("diffmodel").addEventListener("change", () => localStorage.setItem(DIFF_KEY, $("diffmodel").value.trim()));
+
+const REDIRECT_URI = location.origin + location.pathname;
+const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const rand = (n) => b64url(crypto.getRandomValues(new Uint8Array(n)));
+const sha256url = async (s) => b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
+
+async function clientId() {
+  const cached = JSON.parse(localStorage.getItem("ngpt_client") || "null");
+  if (cached && cached.redirect === REDIRECT_URI) return cached.id;
+  const response = await fetch(`${NANOGPT}/oauth/register`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client_name: "patchling relevance filter", redirect_uris: [REDIRECT_URI],
+      grant_types: ["authorization_code"], response_types: ["code"], token_endpoint_auth_method: "none" }),
+  });
+  if (!response.ok) throw new Error("register " + response.status);
+  const id = (await response.json()).client_id;
+  localStorage.setItem("ngpt_client", JSON.stringify({ id, redirect: REDIRECT_URI }));
+  return id;
+}
+
+async function signIn() {
+  const id = await clientId();
+  const verifier = rand(32), state = rand(16);
+  sessionStorage.setItem("pkce", JSON.stringify({ verifier, state, id }));
+  const url = new URL(`${NANOGPT}/oauth/authorize`);
+  url.search = new URLSearchParams({
+    response_type: "code", client_id: id, redirect_uri: REDIRECT_URI, scope: "api.use models.read",
+    state, code_challenge: await sha256url(verifier), code_challenge_method: "S256", invitation_code: "FXrrGWE4",
+  }).toString();
+  location.assign(url.toString());
+}
+
+async function handleRedirect() {
+  const params = new URLSearchParams(location.search);
+  if (!params.has("code") && !params.has("error")) return;
+  history.replaceState({}, "", REDIRECT_URI);
+  const saved = JSON.parse(sessionStorage.getItem("pkce") || "null");
+  sessionStorage.removeItem("pkce");
+  if (params.get("error")) throw new Error(params.get("error"));
+  if (!saved || params.get("state") !== saved.state) throw new Error("state mismatch");
+  const response = await fetch(`${NANOGPT}/oauth/token`, {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code", client_id: saved.id,
+      redirect_uri: REDIRECT_URI, code: params.get("code"), code_verifier: saved.verifier }),
+  });
+  if (!response.ok) throw new Error("token exchange: " + (await response.text()));
+  setKey((await response.json()).access_token);
+}
+
+function renderAuth() {
+  const signed = !!getKey();
+  $("status").textContent = signed ? "ready" : "not signed in";
+  $("signin").style.display = signed ? "none" : "";
+  $("pastebtn").style.display = signed ? "none" : "";
+  $("signout").style.display = signed ? "" : "none";
+  $("run").disabled = !signed || !state.files;
+}
+
+$("signin").addEventListener("click", (event) => { event.preventDefault(); signIn().catch((err) => { $("status").textContent = "sign-in error: " + err.message; }); });
+$("pastebtn").addEventListener("click", () => { $("key").style.display = "block"; $("keyinput").focus(); });
+$("keysave").addEventListener("click", () => { const key = $("keyinput").value.trim(); if (key) { setKey(key); $("key").style.display = "none"; renderAuth(); } });
+$("signout").addEventListener("click", () => { setKey(null); renderAuth(); });
+
+const state = { corpus: null, project: null, task: null, files: null, selected: null, decisions: null, relevant: null };
+const cache = new Map();
+let tokensIn = 0;
+let tokensOut = 0;
+let loadGen = 0;
+
+function currentProject() {
+  return state.corpus.projects.find((project) => project.id === $("project").value);
+}
+function currentTask() {
+  return currentProject().tasks.find((task) => task.id === $("task").value);
+}
+
+function fillTasks() {
+  const project = currentProject();
+  const select = $("task");
+  select.replaceChildren();
+  for (const task of project.tasks) {
+    const option = document.createElement("option");
+    option.value = task.id;
+    option.textContent = task.id;
+    select.appendChild(option);
+  }
+}
+
+async function loadFiles(project) {
+  if (cache.has(project.id)) return cache.get(project.id);
+  const files = {};
+  for (const path of project.files) {
+    const response = await fetch(`${project.root}/${path}`);
+    if (!response.ok) throw new Error(`could not load ${project.root}/${path} (${response.status})`);
+    files[path] = await response.text();
+  }
+  cache.set(project.id, files);
+  return files;
+}
+
+function renderFiles() {
+  const gold = new Set(state.task.relevant);
+  const decisions = new Map((state.decisions || []).map((row) => [row.path, row]));
+  const box = $("files");
+  box.replaceChildren();
+  for (const path of Object.keys(state.files)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    if (path === state.selected) button.className = "on";
+    const name = document.createElement("span");
+    name.textContent = path;
+    button.appendChild(name);
+    const decision = decisions.get(path);
+    if (decision) {
+      const expected = gold.has(path);
+      const pill = document.createElement("span");
+      const agree = decision.relevant === expected;
+      pill.className = "pill " + (agree ? (decision.relevant ? "yes" : "no") : (decision.relevant ? "extra" : "miss"));
+      pill.textContent = decision.uncertain ? "keep?" : decision.relevant ? "yes" : "no";
+      button.appendChild(pill);
+    } else if (gold.has(path)) {
+      const pill = document.createElement("span");
+      pill.className = "pill gold";
+      pill.textContent = "labeled";
+      button.appendChild(pill);
+    }
+    button.addEventListener("click", () => { state.selected = path; renderFiles(); showFile(); });
+    box.appendChild(button);
+  }
+  const selected = box.querySelector("button.on");
+  if (selected) {
+    const boxRect = box.getBoundingClientRect();
+    const rect = selected.getBoundingClientRect();
+    if (rect.top < boxRect.top) box.scrollTop -= boxRect.top - rect.top;
+    else if (rect.bottom > boxRect.bottom) box.scrollTop += rect.bottom - boxRect.bottom;
+  }
+}
+
+function showFile() {
+  const path = state.selected;
+  $("filelabel").textContent = path;
+  $("filebody").textContent = state.files[path];
+  $("prompt").textContent = buildPrompt(path, state.files[path], state.task.task);
+}
+
+function showTask() {
+  const project = currentProject();
+  const task = currentTask();
+  state.project = project;
+  state.task = task;
+  state.decisions = null;
+  state.relevant = null;
+  $("apply").disabled = true;
+  $("tasktext").textContent = task.task;
+  $("taskmeta").textContent = `${task.relevant.length} of ${project.files.length} files are labeled relevant: ${task.relevant.join(", ")}`;
+  if (task.notes) $("taskmeta").textContent += " — " + task.notes;
+  $("diff").textContent = "Run the filter, then diff the kept files. Irrelevant files are not in the prompt.";
+  $("grade").textContent = "";
+  $("misses").textContent = "";
+  $("progress").style.display = "none";
+}
+
+async function selectProject() {
+  const gen = ++loadGen;
+  const project = currentProject();
+  fillTasks();
+  showTask();
+  $("filebody").textContent = "Loading files…";
+  $("prompt").textContent = "";
+  state.files = null;
+  renderAuth();
+  try {
+    const files = await loadFiles(project);
+    if (gen !== loadGen) return;
+    state.files = files;
+    state.selected = currentTask().relevant[0] || project.files[0];
+    renderFiles();
+    showFile();
+    renderAuth();
+  } catch (err) {
+    if (gen !== loadGen) return;
+    $("filebody").textContent = "Could not load the sample project. Serve this folder (npx serve .) and open the page over http. " + err.message;
+  }
+}
+
+function renderGrade() {
+  const grade = gradeDecisions(state.decisions, state.task.relevant);
+  const pct = (value) => Math.round(value * 100) + "%";
+  const kept = state.decisions.filter((row) => row.relevant).length;
+  $("grade").textContent = `precision ${pct(grade.precision)}  recall ${pct(grade.recall)}  kept ${kept} / ${state.decisions.length}  labeled ${state.task.relevant.length}  (tp ${grade.tp} fp ${grade.fp} fn ${grade.fn} tn ${grade.tn})`;
+  const gold = new Set(state.task.relevant);
+  const lines = [];
+  for (const row of state.decisions) {
+    const expected = gold.has(row.path);
+    if (row.relevant && !expected) lines.push("extra  " + row.path);
+    if (!row.relevant && expected) lines.push("missed " + row.path);
+  }
+  $("misses").textContent = lines.length ? lines.join("\n") : "Every yes/no matched the hand labels.";
+}
+
+function addUsage(response) {
+  const usage = response && response.usage || {};
+  tokensIn += usage.prompt_tokens || usage.input_tokens || 0;
+  tokensOut += usage.completion_tokens || usage.output_tokens || 0;
+  $("usage").textContent = `${tokensIn.toLocaleString()} in · ${tokensOut.toLocaleString()} out`;
+}
+
+async function patchling() {
+  return import("https://esm.sh/patchling");
+}
+
+async function runFilter() {
+  const key = getKey();
+  if (!key || !state.files) return;
+  $("run").disabled = true;
+  $("apply").disabled = true;
+  tokensIn = 0;
+  tokensOut = 0;
+  state.decisions = [];
+  $("progress").style.display = "block";
+  $("phase").textContent = `asking ${Object.keys(state.files).length} files…`;
+  $("grade").textContent = "";
+  $("misses").textContent = "";
+  $("usage").textContent = "";
+  renderFiles();
+  try {
+    const lib = await patchling();
+    const model = $("filtermodel").value.trim() || CHEAP_MODEL;
+    const result = await filterRelevant(state.files, state.task.task, {
+      model,
+      callLlm: async (req) => {
+        const response = await lib.callLlm(Object.assign({}, req, { apiKey: key, baseUrl: lib.resolveBaseUrl() }));
+        addUsage(response);
+        return response;
+      },
+      onDecision: (decision) => {
+        state.decisions.push(decision);
+        $("phase").textContent = `${state.decisions.length} / ${Object.keys(state.files).length} files`;
+        renderFiles();
+      },
+    });
+    state.decisions = result.decisions;
+    state.relevant = result.relevant;
+    $("phase").textContent = "filter done";
+    renderFiles();
+    renderGrade();
+    $("apply").disabled = false;
+  } catch (err) {
+    $("phase").textContent = "filter failed";
+    $("misses").textContent = err.message;
+  } finally {
+    $("run").disabled = !getKey();
+  }
+}
+
+function renderDiff(diff) {
+  const pre = $("diff");
+  pre.replaceChildren();
+  if (!diff.trim()) { pre.textContent = "(no diff produced)"; return; }
+  for (const line of diff.split("\n")) {
+    const span = document.createElement("span");
+    span.textContent = line + "\n";
+    if (/^\+\+\+|^---|^@@|^diff |^a\/|^b\//.test(line)) span.className = "hdr";
+    else if (line.startsWith("+")) span.className = "add";
+    else if (line.startsWith("-")) span.className = "del";
+    pre.appendChild(span);
+  }
+}
+
+async function runApply() {
+  const key = getKey();
+  if (!key || !state.relevant) return;
+  const kept = Object.keys(state.relevant);
+  if (!kept.length) {
+    $("diff").textContent = "The filter kept nothing, so generateDiff is not called.";
+    return;
+  }
+  $("apply").disabled = true;
+  $("phase").textContent = `writing a diff from ${kept.length} file(s)…`;
+  $("diff").textContent = "";
+  try {
+    const lib = await patchling();
+    const model = $("diffmodel").value.trim() || CHEAP_MODEL;
+    const diff = await lib.generateDiff(lib.buildEnvironment(state.relevant), state.task.task, {
+      apiKey: key,
+      model,
+      callLlm: async (req) => {
+        const response = await lib.callLlm(req);
+        addUsage(response);
+        return response;
+      },
+    });
+    renderDiff(diff || "");
+    $("phase").textContent = "applying the diff to the kept files…";
+    const updated = await lib.smartapply(diff, state.relevant, { apiKey: key, model });
+    const changed = [];
+    const paths = new Set([...Object.keys(state.relevant), ...Object.keys(updated)]);
+    for (const path of paths) {
+      if (updated[path] !== state.relevant[path]) changed.push(path);
+    }
+    $("phase").textContent = changed.length ? "apply changed " + changed.join(", ") : "apply produced no change";
+  } catch (err) {
+    $("phase").textContent = "diff/apply failed";
+    $("diff").textContent = err.message;
+  } finally {
+    $("apply").disabled = false;
+  }
+}
+
+$("project").addEventListener("change", () => { fillTasks(); selectProject(); });
+$("task").addEventListener("change", () => {
+  showTask();
+  if (state.files) {
+    state.selected = currentTask().relevant[0];
+    renderFiles();
+    showFile();
+  }
+});
+$("run").addEventListener("click", () => { runFilter(); });
+$("apply").addEventListener("click", () => { runApply(); });
+
+try {
+  const corpusResponse = await fetch("relevance/corpus.json");
+  if (!corpusResponse.ok) throw new Error("missing relevance/corpus.json (" + corpusResponse.status + ")");
+  state.corpus = await corpusResponse.json();
+  for (const project of state.corpus.projects) {
+    const option = document.createElement("option");
+    option.value = project.id;
+    option.textContent = project.name;
+    $("project").appendChild(option);
+  }
+  try { await handleRedirect(); } catch (err) { $("status").textContent = "sign-in error: " + err.message; }
+  renderAuth();
+  await selectProject();
+} catch (err) {
+  $("status").textContent = "could not load samples";
+  $("filebody").textContent = "Could not load relevance/corpus.json. Serve this folder (npx serve .) and open the page over http. " + err.message;
+}
+</script>
+</body>
+</html>

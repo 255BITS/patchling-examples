@@ -1,0 +1,36 @@
+{
+  "books": [
+    {
+      "id": "bk_ink",
+      "slug": "the-ink-garden",
+      "title": "The Ink Garden",
+      "author": "Maeve Lorne",
+      "priceCents": 1800,
+      "tags": ["fiction"]
+    },
+    {
+      "id": "bk_tide",
+      "slug": "tide-tables",
+      "title": "Tide Tables",
+      "author": "Jonah Pell",
+      "priceCents": 2400,
+      "tags": ["reference"]
+    },
+    {
+      "id": "bk_loaf",
+      "slug": "one-loaf",
+      "title": "One Loaf",
+      "author": "Maeve Lorne",
+      "priceCents": 1650,
+      "tags": ["food"]
+    },
+    {
+      "id": "bk_lamp",
+      "slug": "lampblack",
+      "title": "Lampblack",
+      "author": "Idris Cho",
+      "priceCents": 2100,
+      "tags": ["fiction"]
+    }
+  ]
+}

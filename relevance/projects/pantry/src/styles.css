@@ -1,0 +1,107 @@
+:root {
+  color-scheme: light dark;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  background: #f4efe6;
+  color: #241c14;
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+.header h1 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.header p,
+.footer p {
+  margin: 0.25rem 0 0;
+  color: #6d6256;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1.5rem;
+  margin-top: 1.25rem;
+}
+
+.search {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.search input,
+.tag,
+.row {
+  font: inherit;
+}
+
+.search input {
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #c9bfb2;
+  border-radius: 0.4rem;
+  background: #fffdf8;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.75rem 0;
+}
+
+.tag,
+.row {
+  border: 1px solid #c9bfb2;
+  background: transparent;
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  cursor: pointer;
+}
+
+.tag.on,
+.row.on {
+  background: #241c14;
+  color: #f4efe6;
+  border-color: #241c14;
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.row {
+  border-radius: 0.4rem;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 0.35rem;
+}
+
+.detail h2 {
+  margin-top: 0;
+}
+
+.meta,
+.empty,
+.footer {
+  color: #6d6256;
+}
+
+@media (max-width: 720px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}

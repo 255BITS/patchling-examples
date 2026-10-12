@@ -1,0 +1,14 @@
+{
+  "name": "shelf",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A small Express API for a bookstore inventory.",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
