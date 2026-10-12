@@ -17,10 +17,12 @@
         "src/config.js",
         "src/db.js",
         "src/lib/money.js",
+        "src/lib/note.js",
         "src/lib/slug.js",
         "src/lib/validate.js",
         "src/middleware/errors.js",
         "src/middleware/requestLog.js",
+        "src/notes/note.js",
         "src/routes/authors.js",
         "src/routes/books.js",
         "src/routes/health.js",
@@ -54,6 +56,12 @@
           "task": "Extend GET /health so the JSON includes how many books are stored and whether the seed file was loaded. The database module already tracks both. Update the health route tests. Leave the books routes alone.",
           "relevant": ["src/db.js", "src/routes/health.js", "test/health.test.js"],
           "notes": "The route has to call the existing countBooks and wasSeedLoaded helpers, so the database module is in the edit set. Book serialization is not."
+        },
+        {
+          "id": "path-not-content",
+          "task": "Import the receipt note from src/notes/note.js when checkout finishes. That path is the helper the receipt should use. Do not edit any other file, including a second copy of the same helper text.",
+          "relevant": ["src/notes/note.js"],
+          "notes": "src/lib/note.js and src/notes/note.js are byte-for-byte the same. Only the notes path is relevant. A cache keyed only by content would give both files the same decision."
         }
       ]
     },

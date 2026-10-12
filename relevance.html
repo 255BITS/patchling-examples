@@ -72,7 +72,12 @@
   Opt-in. <code>generateDiff</code> / <code>smartapply</code> still see whatever map you hand them.
   <code>filterRelevant</code> (JavaScript) and <code>filter_relevant</code> (Python) ask a cheap model,
   once per file, “is this file relevant to the task?” — yes or no — and only the yeses go on.
-  An answer that is not a clear yes or no is kept, so a confused reply cannot drop a file the edit needs.
+  An answer that is not a leading yes or no is kept, so a confused reply cannot drop a file the edit needs.
+</p>
+<p class="muted">
+  Defaults: model <code>xiaomi/mimo-v2.6-flash</code>, prompt version 3, 1024 output tokens, reasoning effort <code>low</code>.
+  The cache key includes the file path, so two files with the same text are judged separately.
+  Figures quoted elsewhere — Flask recall 1.0 and 0.8× overhead — are unverified. This page does not treat them as measured results.
 </p>
 <div class="steps">
   <div class="step"><b>1 · files</b><span>The whole project, as a path → text map.</span></div>
@@ -139,12 +144,14 @@
 <pre id="diff" class="diff">Run the filter, then diff the kept files. Irrelevant files are not in the prompt.</pre>
 
 <h2>JavaScript</h2>
-<pre>import { filterRelevant } from "./relevance/filterRelevant.js";
-import { buildEnvironment, generateDiff, smartapply, callLlm } from "patchling";
+<pre>import { filterRelevant, postChat } from "./relevance/filterRelevant.js";
+import { buildEnvironment, generateDiff, smartapply } from "patchling";
 
 const filtered = await filterRelevant(files, task, {
-  model: "xiaomi/mimo-v2.5-pro-ultraspeed",
-  callLlm: (req) => callLlm(Object.assign({}, req, { apiKey })),
+  model: "xiaomi/mimo-v2.6-flash",
+  maxOutputTokens: 1024,
+  reasoningEffort: "low",
+  callLlm: (req) => postChat(req, { apiKey, baseUrl }),
 });
 
 const diff = await generateDiff(buildEnvironment(filtered.relevant), task, { apiKey });
@@ -152,15 +159,18 @@ const updated = await smartapply(diff, filtered.relevant, { apiKey });</pre>
 <p class="muted"><code>node relevance/example.js --check</code> validates the labels. Add <code>--project shelf --task paginate-books</code> to call the model, and <code>--apply</code> to continue into generateDiff and smartapply. <code>--dry-run</code> prints one prompt and does not call anything.</p>
 
 <h2>Python</h2>
-<pre>from patchling import build_environment, generate_diff, smartapply, call_llm
-from filter_relevant import filter_relevant
+<pre>from patchling import build_environment, generate_diff, smartapply
+from filter_relevant import filter_relevant, post_chat
 
 filtered = filter_relevant(
     files,
     task,
-    call_llm=call_llm,
+    call_llm=post_chat,
     api_key=api_key,
     base_url=base_url,
+    model="xiaomi/mimo-v2.6-flash",
+    max_output_tokens=1024,
+    reasoning_effort="low",
 )
 diff = generate_diff(build_environment(filtered["relevant"]), task, api_key=api_key)
 updated = smartapply(diff, filtered["relevant"], api_key=api_key)</pre>
@@ -170,6 +180,7 @@ updated = smartapply(diff, filtered["relevant"], api_key=api_key)</pre>
 <p>
   A file is relevant when the change has to modify it, or would be wrong without the symbols it defines.
   Sharing a topic is not enough — the health task does not include the books route, and the recipe detail task does not include the data file that already holds <code>cookMinutes</code>.
+  Shelf’s <code>path-not-content</code> task has two files with the same text at different paths, and only <code>src/notes/note.js</code> is relevant.
   That is the positive class a benchmark should score. Every other file under the project root is a negative.
 </p>
 
@@ -178,7 +189,7 @@ updated = smartapply(diff, filtered["relevant"], api_key=api_key)</pre>
 </footer>
 
 <script type="module">
-import { filterRelevant, buildPrompt, gradeDecisions, CHEAP_MODEL } from "./relevance/filterRelevant.js";
+import { filterRelevant, buildPrompt, gradeDecisions, postChat, CHEAP_MODEL } from "./relevance/filterRelevant.js";
 
 const NANOGPT = "https://nano-gpt.com";
 const $ = (id) => document.getElementById(id);
@@ -424,7 +435,7 @@ async function runFilter() {
     const result = await filterRelevant(state.files, state.task.task, {
       model,
       callLlm: async (req) => {
-        const response = await lib.callLlm(Object.assign({}, req, { apiKey: key, baseUrl: lib.resolveBaseUrl() }));
+        const response = await postChat(req, { apiKey: key, baseUrl: lib.resolveBaseUrl() });
         addUsage(response);
         return response;
       },

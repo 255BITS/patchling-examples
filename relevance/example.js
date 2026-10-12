@@ -14,7 +14,7 @@
 
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { filterRelevant, buildPrompt, CHEAP_MODEL } from "./filterRelevant.js";
+import { filterRelevant, buildPrompt, postChat, CHEAP_MODEL } from "./filterRelevant.js";
 import { loadCorpus, loadProject, validateCorpus } from "./benchmark.js";
 
 function argValue(args, flag) {
@@ -38,6 +38,7 @@ Options:
   --dry-run          print the yes/no prompt for the first file and exit
   --apply            after filtering, generateDiff + smartapply on the kept files
   --model ID         cheap filter model (default ${CHEAP_MODEL})
+                     prompt v3, 1024 output tokens, reasoning effort low
   --diff-model ID    model for generateDiff / smartapply
   --out FILE         write { project, task, decisions } JSON a benchmark can score
   --help             show this help
@@ -70,7 +71,7 @@ async function liveFilter(files, task, model) {
   const baseUrl = patchling.resolveBaseUrl();
   return filterRelevant(files, task, {
     model,
-    callLlm: (req) => patchling.callLlm({ ...req, apiKey, baseUrl }),
+    callLlm: (req) => postChat(req, { apiKey, baseUrl }),
     onDecision: (decision) => {
       const mark = decision.uncertain ? "keep?" : decision.relevant ? "yes" : "no";
       console.log(`${mark.padEnd(6)} ${decision.path}`);

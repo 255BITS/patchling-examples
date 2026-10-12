@@ -285,8 +285,12 @@ npx serve .      # then open http://localhost:3000/count.html
 An opt-in step in front of diff and apply. `filterRelevant` (JavaScript) and
 `filter_relevant` (Python) ask a cheap model, once per file, whether that file
 is relevant to the task. Only the yeses are passed to `generateDiff` /
-`smartapply` (and the Python equivalents). Anything that is not a clear yes or
-no is kept.
+`smartapply` (and the Python equivalents). Anything that is not a leading yes
+or no is kept. The default request is prompt version 3, model
+`xiaomi/mimo-v2.6-flash`, 1024 output tokens, and reasoning effort `low`. The
+cache key includes the file path. Figures quoted elsewhere — Flask recall 1.0
+and 0.8× overhead — are unverified. This repo does not treat them as measured
+results.
 
 The page walks through three hand-labeled sample projects — a small Express
 bookstore API (`shelf`), a Python notebook CLI (`ink`), and a React recipe box
@@ -299,6 +303,7 @@ node relevance/example.js --check
 node relevance/example.js --project shelf --task paginate-books --dry-run
 python relevance/example.py --check
 python relevance/example.py --project ink --task search-tag --dry-run
+node relevance/offline-check.js
 ```
 
 `--check` and `--dry-run` do not call a model. A live run needs `patchling`

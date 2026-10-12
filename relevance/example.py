@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from corpus_check import load_corpus, load_project, score_run, validate_corpus
-from filter_relevant import CHEAP_MODEL, build_prompt, filter_relevant
+from filter_relevant import CHEAP_MODEL, build_prompt, filter_relevant, post_chat
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -35,7 +35,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--task", help="task id inside that project")
     parser.add_argument("--dry-run", action="store_true", help="print the yes/no prompt for the first file and exit")
     parser.add_argument("--apply", action="store_true", help="after filtering, generate_diff + smartapply on the kept files")
-    parser.add_argument("--model", default=CHEAP_MODEL, help="cheap filter model")
+    parser.add_argument("--model", default=CHEAP_MODEL, help="cheap filter model (prompt v3, 1024 output tokens, reasoning effort low)")
     parser.add_argument("--diff-model", default=None, help="model for generate_diff / smartapply")
     parser.add_argument("--out", help="write {project, task, decisions} JSON a benchmark can score")
     return parser.parse_args(argv)
@@ -84,7 +84,7 @@ def live_filter(files: dict[str, str], task: str, model: str):
     result = filter_relevant(
         files,
         task,
-        call_llm=patchling.call_llm,
+        call_llm=post_chat,
         model=model,
         api_key=api_key,
         base_url=base_url,
