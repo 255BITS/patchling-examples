@@ -416,6 +416,110 @@ test("a TypeError is not treated as a rejected reasoning effort", async () => {
   assert.equal(result.relevant["a.js"], "x");
 });
 
+test("invalid UTF-8 after the 8192-byte probe is binary and keeps original bytes", async () => {
+  const payload = new Uint8Array(8192 + 1 + 4);
+  payload.fill(0x61, 0, 8192);
+  payload[8192] = 0xff;
+  payload.set([0x54, 0x41, 0x49, 0x4c], 8193);
+  assert.equal(isBinaryContent(payload), true);
+  let calls = 0;
+  const callLlm = async () => {
+    calls += 1;
+    return { choices: [{ message: { content: "yes" } }] };
+  };
+  const excluded = await filterRelevant({ "a.bin": payload }, TASK, { cache: false, log: () => {}, callLlm });
+  assert.equal(calls, 0);
+  assert.equal(excluded.decisions[0].skippedReason, "binary");
+  assert.equal(excluded.relevant["a.bin"], undefined);
+  assert.equal(excluded.dropped["a.bin"], payload);
+  assert.equal(excluded.dropped["a.bin"][8192], 0xff);
+  assert.equal(new TextDecoder().decode(excluded.dropped["a.bin"].subarray(8193)), "TAIL");
+
+  const included = await filterRelevant({ "a.bin": payload }, TASK, {
+    cache: false,
+    log: () => {},
+    onBinary: "include",
+    callLlm,
+  });
+  assert.equal(calls, 0);
+  assert.equal(included.relevant["a.bin"], payload);
+  assert.equal(included.decisions[0].relevant, true);
+  assert.equal(included.relevant["a.bin"][8192], 0xff);
+});
+
+test("a non-string message content fails open and is not cached", async () => {
+  const cache = new MemoryCache();
+  let calls = 0;
+  const callLlm = async () => {
+    calls += 1;
+    return { choices: [{ message: { content: ["no"] } }] };
+  };
+  const opts = { cache, log: () => {}, callLlm };
+  const first = await filterRelevant({ "a.js": "x" }, TASK, opts);
+  const second = await filterRelevant({ "a.js": "x" }, TASK, opts);
+  assert.equal(calls, 2);
+  assert.equal(first.failedOpen, 1);
+  assert.equal(second.failedOpen, 1);
+  assert.equal(first.decisions[0].cached, false);
+  assert.equal(second.decisions[0].cached, false);
+  assert.equal(first.relevant["a.js"], "x");
+  assert.notEqual(first.decisions[0].answer, "no");
+});
+
+test("a quoted no followed by a reason is no", () => {
+  assert.equal(parseYesNo("**no** unrelated"), false);
+  assert.equal(parseYesNo('"no" unrelated'), false);
+  assert.equal(parseYesNo("“no” — unrelated"), false);
+  assert.equal(parseYesNo("yes?"), null);
+  assert.equal(parseYesNo("nope"), null);
+  assert.equal(parseYesNo("no**unrelated"), null);
+  assert.equal(parseYesNo("YES — the route handler"), true);
+  assert.equal(parseYesNo("No,"), false);
+});
+
+test("a leading UTF-8 BOM is preserved in decoded text and cache keys", async () => {
+  const bom = new Uint8Array([0xef, 0xbb, 0xbf, 0x61, 0x62, 0x63]);
+  const text = decodeUtf8Bytes(bom);
+  assert.equal(text, "\uFEFFabc");
+  assert.equal(text.codePointAt(0), 0xfeff);
+  assert.equal(truncateUtf8(text, 3), "\uFEFF");
+  assert.equal(countTokens("\uFEFFabcd"), 2);
+  assert.equal(truncateText(text, null, 1), "\uFEFFabc");
+  const key = await makeCacheKey({
+    model: "m",
+    task: "edit",
+    path: "a.js",
+    content: text,
+    maxOutputTokens: 1024,
+    reasoningEffort: "low",
+    promptVersion: 3,
+    mode: "full",
+    note: "",
+  });
+  const py = spawnSync("python3", ["-c", `
+import sys
+sys.path.insert(0, "relevance")
+from filter_relevant import decode_utf8_bytes, make_cache_key, truncate_utf8
+text = decode_utf8_bytes(bytes([0xEF, 0xBB, 0xBF, 0x61, 0x62, 0x63]))
+assert text == "\\ufeffabc", text
+assert truncate_utf8(text, 3) == "\\ufeff"
+print(make_cache_key(model="m", task="edit", path="a.js", content=text, max_output_tokens=1024, reasoning_effort="low", prompt_version=3, mode="full", note=""))
+`], { cwd: REPO_ROOT, encoding: "utf8" });
+  assert.equal(py.status, 0, py.stderr);
+  assert.equal(py.stdout.trim(), key);
+  let seen = "";
+  const result = await filterRelevant({ "a.js": bom }, TASK, {
+    cache: false,
+    log: () => {},
+    callLlm: async (req) => {
+      seen = req.messages[0].content;
+      return { choices: [{ message: { content: "yes" } }] };
+    },
+  });
+  assert.equal(result.relevant["a.js"], "\uFEFFabc");
+  assert.ok(seen.includes("\uFEFFabc"));
+});
+
 test("an ordinary yes is requested exactly once", async () => {
   let calls = 0;
   const result = await filterRelevant({ "a.js": "x" }, TASK, {
@@ -583,7 +687,7 @@ print(json.dumps({
 });
 
 const FIXTURE_PATH = join(REPO_ROOT, "relevance/fixtures/parity/relevance.json");
-const FIXTURE_SHA256 = "90b7299375518fbc6cb9bfeacb536f46f95c17ed72f8f66d063592bfdaec4665";
+const FIXTURE_SHA256 = "6976ad71714be0138a6043d9bdeb724abe34a65515f8389913dca10a0c48c4f2";
 
 test("parity fixture matches the canonical sha256 and this filter", async () => {
   const raw = readFileSync(FIXTURE_PATH);
@@ -624,6 +728,11 @@ test("parity fixture matches the canonical sha256 and this filter", async () => 
     bytes.set(row.tail, row.pad);
     assert.equal(isBinaryContent(bytes), row.binary, row.name);
   }
+  const bomBytes = Uint8Array.from(fixture.bom.bytes);
+  assert.equal(decodeUtf8Bytes(bomBytes), fixture.bom.text);
+  assert.equal(isBinaryContent(bomBytes), false);
+  assert.equal(countTokens(fixture.bom.text), fixture.bom.tokens);
+  assert.equal(truncateText(fixture.bom.text, null, fixture.bom.maxTokens), fixture.bom.truncated);
   assert.deepEqual(fixture.cacheKey.fields, [
     "prompt_version",
     "model",
@@ -720,6 +829,17 @@ test("parity fixture matches the canonical sha256 and this filter", async () => 
   assert.equal(invalid.decisions[0].skipped_reason, "binary");
   assert.equal(invalid.decisions[0].decision, "no");
   assert.equal(calls, 3);
+  const bomFile = await filterRelevant({ "a.py": Uint8Array.from(fixture.bom.bytes) }, "task", {
+    cache: false,
+    log: () => {},
+    maxBytes: null,
+    maxTokens: null,
+    callLlm: async (req) => {
+      assert.ok(req.messages[0].content.includes(fixture.bom.text));
+      return yes();
+    },
+  });
+  assert.equal(bomFile.relevant["a.py"], fixture.bom.text);
 
   let ignoredCalls = 0;
   const ignored = await filterRelevant(

@@ -190,6 +190,7 @@ updated = smartapply(diff, filtered["relevant"], api_key=api_key)</pre>
 
 <script type="module">
 import { filterRelevant, buildPrompt, gradeDecisions, postChat, CHEAP_MODEL } from "./relevance/filterRelevant.js";
+import { createPageSession } from "./relevance/pageSession.js";
 
 const NANOGPT = "https://nano-gpt.com";
 const $ = (id) => document.getElementById(id);
@@ -267,7 +268,8 @@ $("pastebtn").addEventListener("click", () => { $("key").style.display = "block"
 $("keysave").addEventListener("click", () => { const key = $("keyinput").value.trim(); if (key) { setKey(key); $("key").style.display = "none"; renderAuth(); } });
 $("signout").addEventListener("click", () => { setKey(null); renderAuth(); });
 
-const state = { corpus: null, project: null, task: null, files: null, selected: null, decisions: null, relevant: null };
+const state = { corpus: null, project: null, task: null, files: null, selected: null, decisions: [], relevant: null };
+const session = createPageSession();
 const cache = new Map();
 let tokensIn = 0;
 let tokensOut = 0;
@@ -350,13 +352,15 @@ function showFile() {
 }
 
 function showTask() {
+  session.invalidate();
   const project = currentProject();
   const task = currentTask();
   state.project = project;
   state.task = task;
-  state.decisions = null;
+  state.decisions = [];
   state.relevant = null;
   $("apply").disabled = true;
+  $("run").disabled = !getKey() || !state.files;
   $("tasktext").textContent = task.task;
   $("taskmeta").textContent = `${task.relevant.length} of ${project.files.length} files are labeled relevant: ${task.relevant.join(", ")}`;
   if (task.notes) $("taskmeta").textContent += " — " + task.notes;
@@ -418,11 +422,13 @@ async function patchling() {
 async function runFilter() {
   const key = getKey();
   if (!key || !state.files) return;
+  const run = session.beginFilter();
   $("run").disabled = true;
   $("apply").disabled = true;
   tokensIn = 0;
   tokensOut = 0;
   state.decisions = [];
+  state.relevant = null;
   $("progress").style.display = "block";
   $("phase").textContent = `asking ${Object.keys(state.files).length} files…`;
   $("grade").textContent = "";
@@ -431,6 +437,7 @@ async function runFilter() {
   renderFiles();
   try {
     const lib = await patchling();
+    if (!session.isCurrent(run)) return;
     const model = $("filtermodel").value.trim() || CHEAP_MODEL;
     const result = await filterRelevant(state.files, state.task.task, {
       model,
@@ -440,22 +447,22 @@ async function runFilter() {
         return response;
       },
       onDecision: (decision) => {
-        state.decisions.push(decision);
+        if (!session.acceptDecision(run, state, decision)) return;
         $("phase").textContent = `${state.decisions.length} / ${Object.keys(state.files).length} files`;
         renderFiles();
       },
     });
-    state.decisions = result.decisions;
-    state.relevant = result.relevant;
+    if (!session.publishFilter(run, state, result)) return;
     $("phase").textContent = "filter done";
     renderFiles();
     renderGrade();
     $("apply").disabled = false;
   } catch (err) {
+    if (!session.isCurrent(run)) return;
     $("phase").textContent = "filter failed";
     $("misses").textContent = err.message;
   } finally {
-    $("run").disabled = !getKey();
+    if (session.isCurrent(run)) $("run").disabled = !getKey();
   }
 }
 
@@ -476,7 +483,10 @@ function renderDiff(diff) {
 async function runApply() {
   const key = getKey();
   if (!key || !state.relevant) return;
-  const kept = Object.keys(state.relevant);
+  const run = session.beginApply();
+  const relevant = state.relevant;
+  const taskText = state.task.task;
+  const kept = Object.keys(relevant);
   if (!kept.length) {
     $("diff").textContent = "The filter kept nothing, so generateDiff is not called.";
     return;
@@ -486,8 +496,9 @@ async function runApply() {
   $("diff").textContent = "";
   try {
     const lib = await patchling();
+    if (!session.isCurrent(run)) return;
     const model = $("diffmodel").value.trim() || CHEAP_MODEL;
-    const diff = await lib.generateDiff(lib.buildEnvironment(state.relevant), state.task.task, {
+    const diff = await lib.generateDiff(lib.buildEnvironment(relevant), taskText, {
       apiKey: key,
       model,
       callLlm: async (req) => {
@@ -496,20 +507,23 @@ async function runApply() {
         return response;
       },
     });
+    if (!session.isCurrent(run)) return;
     renderDiff(diff || "");
     $("phase").textContent = "applying the diff to the kept files…";
-    const updated = await lib.smartapply(diff, state.relevant, { apiKey: key, model });
+    const updated = await lib.smartapply(diff, relevant, { apiKey: key, model });
+    if (!session.isCurrent(run)) return;
     const changed = [];
-    const paths = new Set([...Object.keys(state.relevant), ...Object.keys(updated)]);
+    const paths = new Set([...Object.keys(relevant), ...Object.keys(updated)]);
     for (const path of paths) {
-      if (updated[path] !== state.relevant[path]) changed.push(path);
+      if (updated[path] !== relevant[path]) changed.push(path);
     }
     $("phase").textContent = changed.length ? "apply changed " + changed.join(", ") : "apply produced no change";
   } catch (err) {
+    if (!session.isCurrent(run)) return;
     $("phase").textContent = "diff/apply failed";
     $("diff").textContent = err.message;
   } finally {
-    $("apply").disabled = false;
+    if (session.isCurrent(run)) $("apply").disabled = false;
   }
 }
 

@@ -453,6 +453,107 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(result["failed_open"], 1)
         self.assertEqual(result["relevant"]["a.py"], "x")
 
+    def test_invalid_utf8_after_the_probe_is_binary_and_keeps_original_bytes(self):
+        payload = b"a" * 8192 + b"\xffTAIL"
+        self.assertTrue(is_binary_content(payload))
+        calls = {"n": 0}
+
+        def call_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+            calls["n"] += 1
+            return {"choices": [{"message": {"content": "yes"}}]}
+
+        excluded = filter_relevant(
+            {"a.bin": payload},
+            "Edit the target module only.",
+            call_llm=call_llm,
+            cache=False,
+            log=lambda _message: None,
+        )
+        self.assertEqual(calls["n"], 0)
+        self.assertEqual(excluded["decisions"][0]["skipped_reason"], "binary")
+        self.assertNotIn("a.bin", excluded["relevant"])
+        self.assertEqual(excluded["dropped"]["a.bin"], payload)
+        self.assertEqual(excluded["dropped"]["a.bin"][8192], 0xFF)
+        self.assertEqual(excluded["dropped"]["a.bin"][8193:], b"TAIL")
+
+        included = filter_relevant(
+            {"a.bin": payload},
+            "Edit the target module only.",
+            call_llm=call_llm,
+            cache=False,
+            log=lambda _message: None,
+            on_binary="include",
+        )
+        self.assertEqual(calls["n"], 0)
+        self.assertEqual(included["relevant"]["a.bin"], payload)
+        self.assertTrue(included["decisions"][0]["relevant"])
+        self.assertEqual(included["relevant"]["a.bin"][8192], 0xFF)
+
+    def test_non_string_message_content_fails_open_uncached(self):
+        cache = MemoryCache()
+        calls = {"n": 0}
+
+        def call_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+            calls["n"] += 1
+            return {"choices": [{"message": {"content": ["no"]}}]}
+
+        opts = {"call_llm": call_llm, "cache": cache, "log": lambda _message: None}
+        task = "Update the helper and its caller."
+        first = filter_relevant({"a.py": "x"}, task, **opts)
+        second = filter_relevant({"a.py": "x"}, task, **opts)
+        self.assertEqual(calls["n"], 2)
+        self.assertEqual(first["failed_open"], 1)
+        self.assertEqual(second["failed_open"], 1)
+        self.assertFalse(first["decisions"][0]["cached"])
+        self.assertFalse(second["decisions"][0]["cached"])
+        self.assertEqual(first["relevant"]["a.py"], "x")
+        self.assertNotEqual(first["decisions"][0]["answer"], "no")
+
+    def test_quoted_no_followed_by_a_reason_is_no(self):
+        for raw in ("**no** unrelated", '"no" unrelated', "“no” — unrelated"):
+            self.assertIs(parse_yes_no(raw), False, raw)
+        self.assertIsNone(parse_yes_no("yes?"))
+        self.assertIsNone(parse_yes_no("nope"))
+        self.assertIsNone(parse_yes_no("no**unrelated"))
+        self.assertTrue(parse_yes_no("YES — the route handler"))
+        self.assertIs(parse_yes_no("No,"), False)
+
+    def test_leading_utf8_bom_is_preserved(self):
+        raw = bytes([0xEF, 0xBB, 0xBF, 0x61, 0x62, 0x63])
+        text = decode_utf8_bytes(raw)
+        self.assertEqual(text, "\ufeffabc")
+        self.assertEqual(ord(text[0]), 0xFEFF)
+        self.assertEqual(truncate_utf8(text, 3), "\ufeff")
+        self.assertEqual(count_tokens("\ufeffabcd"), 2)
+        self.assertEqual(truncate_text(text, None, 1), "\ufeffabc")
+        seen = {}
+
+        def call_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+            seen["body"] = messages[0]["content"]
+            return {"choices": [{"message": {"content": "yes"}}]}
+
+        result = filter_relevant(
+            {"a.py": raw},
+            "Update the helper and its caller.",
+            call_llm=call_llm,
+            cache=False,
+            log=lambda _message: None,
+        )
+        self.assertEqual(result["relevant"]["a.py"], "\ufeffabc")
+        self.assertIn("\ufeffabc", seen["body"])
+        key = make_cache_key(
+            model="m",
+            task="edit",
+            path="a.js",
+            content=text,
+            max_output_tokens=1024,
+            reasoning_effort="low",
+            prompt_version=3,
+            mode="full",
+            note="",
+        )
+        self.assertEqual(len(key), 64)
+
     def test_ordinary_yes_is_requested_once(self):
         calls = {"n": 0}
 
@@ -538,7 +639,7 @@ class CorpusTests(unittest.TestCase):
 
 
 class ParityFixtureTests(unittest.TestCase):
-    FIXTURE_SHA256 = "90b7299375518fbc6cb9bfeacb536f46f95c17ed72f8f66d063592bfdaec4665"
+    FIXTURE_SHA256 = "6976ad71714be0138a6043d9bdeb724abe34a65515f8389913dca10a0c48c4f2"
 
     @classmethod
     def setUpClass(cls):
@@ -579,6 +680,12 @@ class ParityFixtureTests(unittest.TestCase):
         for row in fixture["binary"]["cases"]:
             raw = b"a" * row["pad"] + bytes(row["tail"])
             self.assertEqual(is_binary_content(raw), row["binary"], row["name"])
+        bom = fixture["bom"]
+        bom_bytes = bytes(bom["bytes"])
+        self.assertEqual(decode_utf8_bytes(bom_bytes), bom["text"])
+        self.assertFalse(is_binary_content(bom_bytes))
+        self.assertEqual(count_tokens(bom["text"]), bom["tokens"])
+        self.assertEqual(truncate_text(bom["text"], None, bom["maxTokens"]), bom["truncated"])
         self.assertEqual(
             fixture["cacheKey"]["fields"],
             [
@@ -686,6 +793,23 @@ class ParityFixtureTests(unittest.TestCase):
         self.assertEqual(invalid["decisions"][0]["skippedReason"], "binary")
         self.assertEqual(invalid["decisions"][0]["decision"], "no")
         self.assertEqual(calls["n"], 3)
+        bom_seen = {}
+
+        def bom_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+            bom_seen["body"] = messages[0]["content"]
+            return {"choices": [{"message": {"content": "yes"}}]}
+
+        bom_file = filter_relevant(
+            {"a.py": bytes(fixture["bom"]["bytes"])},
+            "task",
+            call_llm=bom_llm,
+            cache=False,
+            log=lambda _message: None,
+            max_bytes=None,
+            max_tokens=None,
+        )
+        self.assertIn(fixture["bom"]["text"], bom_seen["body"])
+        self.assertEqual(bom_file["relevant"]["a.py"], fixture["bom"]["text"])
 
         ignored_calls = {"n": 0}
 

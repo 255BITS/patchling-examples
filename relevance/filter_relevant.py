@@ -94,7 +94,7 @@ _ANSWER_PREFIX = re.compile(r"^(?:answer|decision)\s*[:\-]\s*", re.IGNORECASE)
 _FENCE_LINE = re.compile(r"^```[a-zA-Z0-9_-]*\s*$")
 _LEAD_WRAP = re.compile(r"""^[\s"'`*_“”‘’]+""")
 _TRAIL_WRAP = re.compile(r"""[\s"'`*_“”‘’]+$""")
-_LEADING = re.compile(r"^(yes|no)(?=$|\s|[.,!:;)])", re.IGNORECASE)
+_LEADING = re.compile(r"""^(yes|no)["'`*_“”‘’]*(?=$|\s|[.,!:;)])""", re.IGNORECASE)
 _THINK_BLOCK = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
 _THINK_OPEN = re.compile(r"<think\b[^>]*>.*\Z", re.IGNORECASE | re.DOTALL)
 _THINKING_BLOCK = re.compile(r"<thinking\b[^>]*>.*?</thinking>", re.IGNORECASE | re.DOTALL)
@@ -159,11 +159,16 @@ def _prefix_plausible(raw: bytes, index: int, have: int, need: int) -> bool:
     return True
 
 
-def _sample_is_binary(sample: bytes) -> bool:
-    size = len(sample)
+def _sample_is_binary(raw: bytes) -> bool:
+    """Whole payload. Invalid UTF-8 anywhere is binary.
+
+    An incomplete tail of at most 3 bytes is text only when the file ends
+    inside the 8192-byte probe and some valid text came first.
+    """
+    size = len(raw)
     index = 0
     while index < size:
-        lead = sample[index]
+        lead = raw[index]
         if lead == 0:
             return True
         if lead < 0x80:
@@ -176,19 +181,22 @@ def _sample_is_binary(sample: bytes) -> bool:
             have = size - index
             if have > 3:
                 return True
-            if not _prefix_plausible(sample, index, have, need):
+            if not _prefix_plausible(raw, index, have, need):
+                return True
+            if size > BINARY_PROBE_BYTES:
                 return True
             return index == 0
-        if not _sequence_valid(sample, index, need):
+        if not _sequence_valid(raw, index, need):
             return True
         index += need
     return False
 
 
 def is_binary_content(content: Any) -> bool:
-    """NUL or invalid UTF-8 in the first 8192 bytes.
+    """NUL or invalid UTF-8 anywhere in the payload.
 
-    An incomplete tail of at most 3 bytes after real text is still text.
+    An incomplete tail of at most 3 bytes is still text when the file ends
+    inside the first 8192 bytes and some valid text came first.
     A non-empty buffer that decodes to empty text is binary.
     """
     if content is None:
@@ -199,7 +207,7 @@ def is_binary_content(content: Any) -> bool:
         raw = bytes(content)
     else:
         return False
-    return _sample_is_binary(raw[:BINARY_PROBE_BYTES])
+    return _sample_is_binary(raw)
 
 
 def truncate_utf8(text: str, max_bytes: int) -> str:
@@ -335,7 +343,7 @@ def make_cache_key(
 
 
 def decode_utf8_bytes(raw: bytes) -> str:
-    """Valid UTF-8 becomes text. An incomplete tail is dropped. Never emits U+FFFD."""
+    """Valid UTF-8 becomes text. A leading BOM is kept. An incomplete tail is dropped."""
     try:
         return raw.decode("utf-8")
     except UnicodeDecodeError:
