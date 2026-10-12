@@ -1,11 +1,11 @@
 /**
  * Opt-in relevance filter for patchling (JavaScript).
  *
- * Prompt version 3. One decision per file path. The cache key is a hash of
- * the classification inputs: prompt version, model, output-token limit,
- * reasoning effort, task, file path, and content after truncation. Two paths
- * are never collapsed into one call, even when the bytes match and the cache
- * is off.
+ * Prompt version 3. One decision per file path. The cache key is a sha256 of
+ * length-prefixed fields: prompt version, model, output-token limit, the
+ * effort actually sent, task, file path, mode, preview note, and the exact
+ * body sent. Two paths are never collapsed into one call. A full body and the
+ * same characters produced by truncation do not share a key.
  *
  * A leading standalone yes or no (after the supported wrappers) is a decision.
  * Anything else is malformed: the file is kept, failedOpen is set, and the
@@ -59,6 +59,7 @@ export const DEFAULT_IGNORE_PATTERNS = [
   "**/packages.lock.json",
   "**/Package.resolved",
   "**/*.min.js",
+  "**/*.min.mjs",
   "**/*.min.css",
   "**/*.map",
   "**/dist/**",
@@ -81,17 +82,18 @@ export const PROMPT_INSTRUCTIONS = [
 
 const ANSWER_PREFIX = /^(?:answer|decision)\s*[:\-]\s*/i;
 const FENCE_LINE = /^```[a-zA-Z0-9_-]*\s*$/;
-const WRAPPERS = /[\s"'`*“”‘’]/;
+const WRAPPERS = /[\s"'`*_“”‘’]/;
+const LEADING_ANSWER = /^(yes|no)(?=$|\s|[.,!:;)])/i;
 
 /**
- * Unicode code points divided by 4. Empty text is 0; anything else is at least 1.
+ * Unicode code points, rounded up. Empty text is 0. A surrogate pair is one code point.
  * @param {string} text
  * @returns {number}
  */
 export function countTokens(text) {
   const chars = Array.from(String(text ?? ""));
   if (!chars.length) return 0;
-  return Math.max(1, Math.floor(chars.length / 4));
+  return Math.ceil(chars.length / 4);
 }
 
 /**
@@ -154,7 +156,8 @@ function prefixPlausible(bytes, index, have, need) {
 
 /**
  * First 8192 bytes. A NUL or a genuinely invalid UTF-8 byte is binary.
- * An incomplete trailing sequence of at most 3 bytes is not.
+ * An incomplete tail of at most 3 bytes after real text is not. A non-empty
+ * buffer that decodes to empty text is binary.
  * @param {Uint8Array} bytes
  * @returns {boolean}
  */
@@ -174,7 +177,8 @@ function sampleIsBinary(bytes) {
     if (index + need > size) {
       const have = size - index;
       if (have > 3) return true;
-      return !prefixPlausible(sample, index, have, need);
+      if (!prefixPlausible(sample, index, have, need)) return true;
+      return index === 0;
     }
     if (!sequenceValid(sample, index, need)) return true;
     index += need;
@@ -295,31 +299,87 @@ function resolveIgnore(ignore) {
 }
 
 /**
- * @param {string} text
+ * @param {Uint8Array | string} data
  * @returns {Promise<string>}
  */
-async function sha256Hex(text) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+async function sha256Hex(data) {
+  const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 /**
- * Hash of the exact classification inputs. `content` is the truncated body.
+ * Classification inputs, in contract order. `content` is the exact body sent.
+ * `reasoningEffort` is the effort actually sent: "low", or "" when omitted.
  * @param {object} fields
- * @returns {Promise<string>}
+ * @returns {string[]}
  */
-export async function makeCacheKey(fields) {
-  const effort = fields.reasoningEffort == null ? "" : String(fields.reasoningEffort);
-  const payload = [
+export function cacheKeyFields(fields) {
+  const effort = fields.reasoningEffort == null || fields.reasoningEffort === ""
+    ? ""
+    : String(fields.reasoningEffort);
+  return [
     String(fields.promptVersion ?? FILTER_PROMPT_VERSION),
     String(fields.model ?? ""),
     String(fields.maxOutputTokens ?? DEFAULT_FILTER_MAX_OUTPUT_TOKENS),
     effort,
-    String(fields.task ?? ""),
+    String(fields.task ?? fields.intent ?? ""),
     String(fields.path ?? ""),
+    String(fields.mode ?? "full"),
+    fields.note == null ? "" : String(fields.note),
     String(fields.content ?? ""),
-  ].join("\n");
-  return sha256Hex(payload);
+  ];
+}
+
+/**
+ * `<utf8 byte length>:<bytes>\n` for each field.
+ * @param {string[]} parts
+ * @returns {Uint8Array}
+ */
+export function encodeCacheKey(parts) {
+  const encoder = new TextEncoder();
+  const chunks = [];
+  for (const part of parts) {
+    const bytes = encoder.encode(String(part));
+    chunks.push(encoder.encode(`${bytes.length}:`));
+    chunks.push(bytes);
+    chunks.push(encoder.encode("\n"));
+  }
+  const out = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+/**
+ * Hash of the exact classification inputs.
+ * @param {object} fields
+ * @returns {Promise<string>}
+ */
+export async function makeCacheKey(fields) {
+  return sha256Hex(encodeCacheKey(cacheKeyFields(fields)));
+}
+
+/**
+ * Valid UTF-8, including an incomplete trailing sequence, becomes text.
+ * @param {Uint8Array} bytes
+ * @returns {string}
+ */
+export function decodeUtf8Bytes(bytes) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    let index = 0;
+    while (index < bytes.length) {
+      const need = utf8SequenceLength(bytes[index]);
+      if (!need || index + need > bytes.length || !sequenceValid(bytes, index, need)) break;
+      index += need;
+    }
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, index));
+  }
 }
 
 export class MemoryCache {
@@ -434,23 +494,32 @@ function unwrapLine(line) {
  * @returns {boolean | null} true = yes, false = no, null = malformed
  */
 export function parseYesNo(text) {
-  const stripped = unwrapFence(stripThink(text)).trim();
-  const line = stripped.split(/\r?\n/).map((part) => part.trim()).find(Boolean);
-  if (!line) return null;
-  const match = unwrapLine(line).match(/^(yes|no)(?=$|[^a-z0-9_])/i);
+  const stripped = unwrapLine(unwrapFence(stripThink(text)).trim());
+  if (!stripped) return null;
+  const match = stripped.match(LEADING_ANSWER);
   if (!match) return null;
   return match[1].toLowerCase() === "yes";
 }
 
 /**
+ * Model text, or a throw when the envelope is not a chat completion.
+ * The caller treats that throw as fail-open.
  * @param {unknown} response
  * @returns {string}
  */
-function messageText(response) {
-  const content = response?.choices?.[0]?.message?.content;
-  if (typeof content === "string") return content;
-  if (content == null) return "";
-  return JSON.stringify(content);
+export function readEnvelope(response) {
+  if (typeof response === "string" || response instanceof Uint8Array) {
+    throw new Error("non-JSON relevance response");
+  }
+  if (!response || typeof response !== "object") {
+    throw new Error("non-JSON relevance response");
+  }
+  const choices = response.choices;
+  if (!Array.isArray(choices) || choices.length === 0) throw new Error("missing choices");
+  const message = choices[0] && choices[0].message;
+  if (!message || typeof message !== "object") throw new Error("missing message");
+  if (typeof message.content !== "string") throw new Error("missing content");
+  return message.content;
 }
 
 /**
@@ -513,6 +582,7 @@ function statusOf(err) {
  * @returns {boolean}
  */
 function reasoningEffortRejected(err) {
+  if (err instanceof TypeError) return false;
   const message = String(err?.message || err).toLowerCase();
   if (!message.includes("reasoning")) return false;
   const status = statusOf(err);
@@ -553,6 +623,7 @@ function decisionRow(path, fields) {
     answer: fields.answer ?? "",
     cached: !!fields.cached,
     skippedReason: fields.skippedReason ?? null,
+    skipped_reason: fields.skippedReason ?? null,
     error: fields.error ?? null,
   };
 }
@@ -638,7 +709,7 @@ export async function filterRelevant(files, task, opts = {}) {
       if (effort) payload.reasoningEffort = effort;
       else delete payload.reasoningEffort;
       try {
-        return await callLlm(payload);
+        return { response: await callLlm(payload), effortSent: effort ? String(effort) : "" };
       } catch (err) {
         if (effort && !stripped && reasoningEffortRejected(err)) {
           stripped = true;
@@ -654,68 +725,78 @@ export async function filterRelevant(files, task, opts = {}) {
   }
 
   const decisions = await mapPool(entries, concurrency, async ([path, content]) => {
-    const text = typeof content === "string" ? content : "";
+    const finish = (row) => {
+      if (typeof opts.onDecision === "function") opts.onDecision(row);
+      return row;
+    };
     if (isIgnoredPath(path, ignore)) {
-      return decisionRow(path, { decision: "no", answer: "", skippedReason: "ignored" });
+      return finish(decisionRow(path, { decision: "no", answer: "", skippedReason: "ignored" }));
     }
     if (isBinaryContent(content)) {
-      if (onBinary === "include") return decisionRow(path, { decision: "yes", answer: "", skippedReason: "binary" });
-      return decisionRow(path, { decision: "no", answer: "", skippedReason: "binary" });
+      const kept = onBinary === "include";
+      return finish(decisionRow(path, {
+        decision: kept ? "yes" : "no",
+        answer: "",
+        skippedReason: "binary",
+      }));
     }
+    const text = typeof content === "string" ? content : decodeUtf8Bytes(content);
     const body = previewBody(text, limits);
     const truncated = body !== text;
     if (truncated && onOversize === "exclude") {
-      return decisionRow(path, { decision: "no", answer: "", skippedReason: "oversize" });
+      return finish(decisionRow(path, { decision: "no", answer: "", skippedReason: "oversize" }));
     }
     if (truncated && onOversize === "include") {
-      return decisionRow(path, { decision: "yes", answer: "", skippedReason: "oversize" });
+      return finish(decisionRow(path, { decision: "yes", answer: "", skippedReason: "oversize" }));
     }
-    const key = await makeCacheKey({
+    const mode = truncated ? "truncated" : "full";
+    const note = "";
+    const requestedEffort = reasoningEffort ? String(reasoningEffort) : "";
+    const keyFor = (effort) => makeCacheKey({
       promptVersion: FILTER_PROMPT_VERSION,
       model,
       maxOutputTokens,
-      reasoningEffort: reasoningEffort || "",
+      reasoningEffort: effort,
       task,
       path,
+      mode,
+      note,
       content: body,
     });
-    const hit = await cacheGet(key);
+    const primaryKey = await keyFor(requestedEffort);
+    let hit = await cacheGet(primaryKey);
+    if (!hit && requestedEffort) hit = await cacheGet(await keyFor(""));
     if (hit) {
-      const row = decisionRow(path, { decision: hit.decision, answer: hit.answer || "", cached: true });
-      if (typeof opts.onDecision === "function") opts.onDecision(row);
-      return row;
+      return finish(decisionRow(path, { decision: hit.decision, answer: hit.answer || "", cached: true }));
     }
     const prompt = buildPrompt(path, body, task, { maxBytes: null, maxTokens: null });
     const request = {
       model,
       temperature,
       maxTokens: maxOutputTokens,
-      reasoningEffort: reasoningEffort || null,
+      reasoningEffort: requestedEffort || null,
       messages: [{ role: "user", content: prompt }],
     };
     let answer = "";
+    let effortSent = requestedEffort;
     try {
-      const response = await ask(request);
-      answer = messageText(response).trim();
+      const asked = await ask(request);
+      effortSent = asked.effortSent;
+      answer = readEnvelope(asked.response).trim();
     } catch (err) {
-      const row = decisionRow(path, {
+      return finish(decisionRow(path, {
         failedOpen: true,
         answer: "",
         error: err?.message || String(err),
-      });
-      if (typeof opts.onDecision === "function") opts.onDecision(row);
-      return row;
+      }));
     }
     const verdict = parseYesNo(answer);
     if (verdict === null) {
-      const row = decisionRow(path, { failedOpen: true, answer });
-      if (typeof opts.onDecision === "function") opts.onDecision(row);
-      return row;
+      return finish(decisionRow(path, { failedOpen: true, answer }));
     }
     const row = decisionRow(path, { decision: verdict ? "yes" : "no", answer });
-    await cachePut(key, { decision: row.decision, answer });
-    if (typeof opts.onDecision === "function") opts.onDecision(row);
-    return row;
+    await cachePut(await keyFor(effortSent), { decision: row.decision, answer });
+    return finish(row);
   });
 
   /** @type {Record<string, string | Uint8Array>} */
@@ -726,8 +807,11 @@ export async function filterRelevant(files, task, opts = {}) {
   for (const decision of decisions) {
     if (decision.failedOpen) failedOpen += 1;
     const content = files[decision.path];
-    if (decision.relevant) relevant[decision.path] = content;
-    else dropped[decision.path] = content;
+    const stored = decision.skippedReason === "binary" || typeof content === "string" || !(content instanceof Uint8Array)
+      ? content
+      : decodeUtf8Bytes(content);
+    if (decision.relevant) relevant[decision.path] = stored;
+    else dropped[decision.path] = stored;
   }
   return {
     relevant,

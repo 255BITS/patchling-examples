@@ -18,14 +18,23 @@ Defaults, identical in both languages:
 | reasoning effort | `low` (if a 4xx names the parameter, one retry without it) |
 | concurrency | 8 |
 | max bytes | 200000, cut on a code-point boundary |
-| input tokens | 12000, counted as Unicode code points / 4 |
+| input tokens | 12000, counted as ceil(Unicode code points / 4) |
 | retries | 2 more attempts after a timeout, 5xx, or billing-reservation error |
 
-The cache key is a hash of those classification inputs: prompt version, model,
-output-token limit, reasoning effort, task, **file path**, and content after
-truncation. Two paths never share a decision, even when the bytes match and
-the cache is off. A cache read or write error is logged and does not abort the
-run.
+The cache key is a sha256 of length-prefixed UTF-8 fields, in order: prompt
+version, model, output-token limit, the reasoning effort actually sent
+(`low`, or empty when that parameter was omitted), task, **file path**, mode
+(`full`, `truncated`, or `binary`), the preview note, and the exact body sent.
+Each field is `<utf-8 byte length>:<bytes>` and a newline. A full file whose
+text is `abc` does not share a key with a longer file truncated to `abc`.
+Two paths never share a decision, even when the bytes match and the cache is
+off. A rejected `reasoning_effort` is stored under the empty-effort key;
+later lookups try `low` first, then empty. A cache read failure is a miss.
+A cache write failure is logged. Neither aborts the run. A missing or
+non-JSON model envelope fails open and is not cached. Valid UTF-8 bytes are
+decoded to text before the call, and that text is what the result maps
+forward. Invalid bytes, including a non-empty buffer that decodes to nothing,
+are binary and are not sent.
 
 Figures quoted elsewhere — Flask recall 1.0 and 0.8× overhead — are
 **unverified**. This repo does not re-run that pass and does not treat those
@@ -146,6 +155,7 @@ Both languages skip the same case-insensitive globs unless `ignore` is
 **/packages.lock.json
 **/Package.resolved
 **/*.min.js
+**/*.min.mjs
 **/*.min.css
 **/*.map
 **/dist/**

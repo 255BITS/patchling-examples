@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -14,13 +15,16 @@ import {
   buildPrompt,
   chatRequestBody,
   countTokens,
+  decodeUtf8Bytes,
   filterRelevant,
   gradeDecisions,
   isBinaryContent,
   isIgnoredPath,
+  encodeCacheKey,
   makeCacheKey,
   MemoryCache,
   parseYesNo,
+  truncateText,
   truncateUtf8,
 } from "./filterRelevant.js";
 
@@ -42,6 +46,10 @@ test("parseYesNo accepts a leading yes or no after the supported wrappers", () =
   assert.equal(parseYesNo("I think yes"), null);
   assert.equal(parseYesNo("yeah"), null);
   assert.equal(parseYesNo("nope"), null);
+  assert.equal(parseYesNo("yes?"), null);
+  assert.equal(parseYesNo("__yes__"), true);
+  assert.equal(parseYesNo("“no”"), false);
+  assert.equal(parseYesNo(" no, this file is irrelevant \nyes, the function to rename is here"), false);
   assert.equal(parseYesNo("There is no doubt this file is required"), null);
   assert.equal(parseYesNo(""), null);
   assert.equal(parseYesNo("   \n"), null);
@@ -58,7 +66,12 @@ test("truncation stays on a code-point boundary and never emits U+FFFD", () => {
   }
   assert.equal(countTokens(""), 0);
   assert.equal(countTokens("abcd"), 1);
+  assert.equal(countTokens("abcde"), 2);
   assert.equal(countTokens("😀😀😀😀"), 1);
+  assert.equal(truncateText("abc😀def", null, 1), "abc😀");
+  assert.equal(truncateText("中文测试额外", null, 1), "中文测试");
+  assert.equal(truncateText("cafe\u0301XYZ", null, 1), "cafe");
+  assert.equal(truncateText("abc😀def", null, 1).includes("\uFFFD"), false);
 });
 
 test("binary detection tolerates only an incomplete trailing sequence", () => {
@@ -277,6 +290,165 @@ test("cache read and write failures are logged and do not abort the run", async 
   assert.ok(logs.some((message) => message.includes("write failed")));
 });
 
+test("a full abc and a body truncated to abc do not share a cache key", async () => {
+  const shared = {
+    model: "m",
+    task: "edit",
+    path: "a.py",
+    content: "abc",
+    maxOutputTokens: 1024,
+    reasoningEffort: "low",
+    promptVersion: 3,
+    note: "",
+  };
+  const full = await makeCacheKey({ ...shared, mode: "full" });
+  const cut = await makeCacheKey({ ...shared, mode: "truncated" });
+  assert.notEqual(full, cut);
+  assert.equal(new TextDecoder().decode(encodeCacheKey(["ab"])), "2:ab\n");
+  assert.notEqual(
+    new TextDecoder().decode(encodeCacheKey(["a", "b"])),
+    new TextDecoder().decode(encodeCacheKey(["ab"])),
+  );
+});
+
+test("changed bytes at the same path are classified again", async () => {
+  const calls = [];
+  const cache = new MemoryCache();
+  const callLlm = async (req) => {
+    calls.push(req.messages[0].content);
+    return { choices: [{ message: { content: "yes" } }] };
+  };
+  const task = "Edit the target module only.";
+  const opts = { cache, log: () => {}, callLlm };
+  const first = await filterRelevant({ "src/target.py": new TextEncoder().encode("alpha = 1\n") }, task, opts);
+  const second = await filterRelevant({ "src/target.py": new TextEncoder().encode("beta = 2\n") }, task, opts);
+  assert.equal(calls.length, 2);
+  assert.match(calls[0], /alpha = 1/);
+  assert.match(calls[1], /beta = 2/);
+  assert.equal(first.decisions[0].cached, false);
+  assert.equal(second.decisions[0].cached, false);
+  assert.equal(first.relevant["src/target.py"], "alpha = 1\n");
+  assert.equal(second.relevant["src/target.py"], "beta = 2\n");
+  assert.equal(decodeUtf8Bytes(new TextEncoder().encode("alpha = 1\n")), "alpha = 1\n");
+  const third = await filterRelevant({ "src/target.py": new TextEncoder().encode("beta = 2\n") }, task, opts);
+  assert.equal(calls.length, 2);
+  assert.equal(third.decisions[0].cached, true);
+  const bad = await filterRelevant({ "a.bin": new Uint8Array([0x61, 0xff]) }, task, {
+    cache: false,
+    log: () => {},
+    callLlm,
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(bad.decisions[0].skippedReason, "binary");
+  assert.equal(bad.decisions[0].skipped_reason, "binary");
+  assert.equal(bad.relevant["a.bin"], undefined);
+});
+
+test("a broken model envelope fails open and is not cached", async () => {
+  const cache = new MemoryCache();
+  const bad = [
+    null,
+    "not-json",
+    {},
+    { choices: [] },
+    { choices: [{}] },
+    { choices: [{ message: {} }] },
+    { choices: [{ message: { content: null } }] },
+    { choices: [{ message: { content: "" } }] },
+  ];
+  let calls = 0;
+  const callLlm = async () => {
+    calls += 1;
+    return bad[Math.min(calls, bad.length) - 1];
+  };
+  const first = await filterRelevant({ "a.js": "x" }, TASK, { cache, log: () => {}, callLlm });
+  const second = await filterRelevant({ "a.js": "x" }, TASK, { cache, log: () => {}, callLlm });
+  assert.equal(calls, 2);
+  assert.equal(first.failedOpen, 1);
+  assert.equal(second.failedOpen, 1);
+  assert.equal(first.relevant["a.js"], "x");
+  assert.equal(first.decisions[0].cached, false);
+  for (const response of bad) {
+    const result = await filterRelevant({ "a.js": "x" }, TASK, {
+      cache: false,
+      log: () => {},
+      callLlm: async () => response,
+    });
+    assert.equal(result.failedOpen, 1, JSON.stringify(response));
+    assert.equal(result.relevant["a.js"], "x");
+  }
+});
+
+test("a rejected reasoning effort is stored under the empty effort key", async () => {
+  const cache = new MemoryCache();
+  let calls = 0;
+  const callLlm = async (req) => {
+    calls += 1;
+    if (req.reasoningEffort) {
+      const error = new Error("LLM 400: unsupported parameter reasoning_effort");
+      error.status = 400;
+      throw error;
+    }
+    return { choices: [{ message: { content: "no" } }] };
+  };
+  const opts = { cache, log: () => {}, retryBaseMs: 0, sleep: async () => {}, callLlm };
+  const first = await filterRelevant({ "a.js": "x" }, TASK, opts);
+  assert.equal(calls, 2);
+  assert.equal(first.dropped["a.js"], "x");
+  const second = await filterRelevant({ "a.js": "x" }, TASK, opts);
+  assert.equal(calls, 2);
+  assert.equal(second.decisions[0].cached, true);
+  assert.equal(second.dropped["a.js"], "x");
+});
+
+test("a TypeError is not treated as a rejected reasoning effort", async () => {
+  let calls = 0;
+  const result = await filterRelevant({ "a.js": "x" }, TASK, {
+    cache: false,
+    log: () => {},
+    callLlm: async () => {
+      calls += 1;
+      throw new TypeError("unsupported");
+    },
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.failedOpen, 1);
+  assert.equal(result.relevant["a.js"], "x");
+});
+
+test("an ordinary yes is requested exactly once", async () => {
+  let calls = 0;
+  const result = await filterRelevant({ "a.js": "x" }, TASK, {
+    cache: false,
+    log: () => {},
+    callLlm: async () => {
+      calls += 1;
+      return { choices: [{ message: { content: "yes" } }] };
+    },
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.failedOpen, 0);
+  assert.equal(result.decisions[0].skippedReason, null);
+});
+
+test("minified modules are ignored", async () => {
+  let calls = 0;
+  const result = await filterRelevant({ "src/app.min.mjs": "bundle", "src/app.js": "source" }, TASK, {
+    cache: false,
+    log: () => {},
+    callLlm: async (req) => {
+      calls += 1;
+      assert.match(req.messages[0].content, /File path:\nsrc\/app\.js\n/);
+      return { choices: [{ message: { content: "yes" } }] };
+    },
+  });
+  assert.equal(calls, 1);
+  const skipped = result.decisions.find((row) => row.path === "src/app.min.mjs");
+  assert.equal(skipped.skippedReason, "ignored");
+  assert.equal(skipped.skipped_reason, "ignored");
+  assert.equal(skipped.relevant, false);
+});
+
 test("gradeDecisions counts misses the model never returned", () => {
   const grade = gradeDecisions(
     [
@@ -355,6 +527,7 @@ from filter_relevant import (
     build_prompt,
     make_cache_key,
     truncate_utf8,
+    truncate_text,
     is_ignored_path,
     count_tokens,
 )
@@ -370,6 +543,13 @@ print(json.dumps({
     "kept": is_ignored_path("src/app.js"),
     "case": is_ignored_path("Package.resolved"),
     "tokens": count_tokens("😀😀😀😀"),
+    "tokens5": count_tokens("abcde"),
+    "emojiCut": truncate_text("abc😀def", None, 1),
+    "cjk": truncate_text("中文测试额外", None, 1),
+    "mark": truncate_text("cafe\\u0301XYZ", None, 1),
+    "mjs": is_ignored_path("src/app.min.mjs"),
+    "fullKey": make_cache_key(model="m", task="edit", path="a.py", content="abc", max_output_tokens=1024, reasoning_effort="low", prompt_version=3, mode="full", note=""),
+    "cutKey": make_cache_key(model="m", task="edit", path="a.py", content="abc", max_output_tokens=1024, reasoning_effort="low", prompt_version=3, mode="truncated", note=""),
     "version": FILTER_PROMPT_VERSION,
     "patterns": list(DEFAULT_IGNORE_PATTERNS),
 }))
@@ -389,8 +569,200 @@ print(json.dumps({
   assert.equal(got.kept, false);
   assert.equal(got.case, true);
   assert.equal(got.tokens, 1);
+  assert.equal(got.tokens5, 2);
+  assert.equal(got.emojiCut, "abc😀");
+  assert.equal(got.cjk, "中文测试");
+  assert.equal(got.mark, "cafe");
+  assert.equal(got.mjs, true);
+  assert.notEqual(got.fullKey, got.cutKey);
+  assert.equal(got.fullKey, await makeCacheKey({
+    model: "m", task: "edit", path: "a.py", content: "abc", maxOutputTokens: 1024, reasoningEffort: "low", promptVersion: 3, mode: "full", note: "",
+  }));
   assert.equal(got.version, 3);
   assert.deepEqual(got.patterns, DEFAULT_IGNORE_PATTERNS);
+});
+
+const FIXTURE_PATH = join(REPO_ROOT, "relevance/fixtures/parity/relevance.json");
+const FIXTURE_SHA256 = "90b7299375518fbc6cb9bfeacb536f46f95c17ed72f8f66d063592bfdaec4665";
+
+test("parity fixture matches the canonical sha256 and this filter", async () => {
+  const raw = readFileSync(FIXTURE_PATH);
+  assert.equal(createHash("sha256").update(raw).digest("hex"), FIXTURE_SHA256);
+  const fixture = JSON.parse(raw.toString("utf8"));
+  assert.equal(FILTER_PROMPT_VERSION, fixture.promptVersion);
+  assert.equal(DEFAULT_FILTER_MAX_OUTPUT_TOKENS, fixture.maxOutputTokens);
+  assert.equal(DEFAULT_FILTER_REASONING_EFFORT, fixture.reasoningEffort);
+  assert.equal(fixture.tokenEstimate.rule, "ceil(code_points/4)");
+  assert.equal(countTokens(""), fixture.tokenEstimate.empty);
+  for (const example of fixture.tokenEstimate.examples) {
+    assert.equal(countTokens(example.text), example.tokens, JSON.stringify(example.text));
+  }
+  for (const row of fixture.tokenTruncation) {
+    const got = truncateText(row.text, null, row.maxTokens);
+    assert.equal(got, row.expected, row.text);
+    assert.equal(got.includes("\uFFFD"), false);
+  }
+  for (const row of fixture.truncation) {
+    const got = truncateUtf8(row.text, row.maxBytes);
+    assert.equal(got, row.expected, row.text);
+    assert.equal(got.includes("\uFFFD"), false);
+  }
+  for (const row of fixture.parser) {
+    const parsed = parseYesNo(row.raw);
+    const decision = parsed === true ? "yes" : parsed === false ? "no" : null;
+    assert.equal(decision, row.decision, JSON.stringify(row.raw));
+  }
+  assert.equal(fixture.malformedIsFailedOpen, true);
+  assert.equal(fixture.ignore.label, "ignored");
+  assert.deepEqual([...DEFAULT_IGNORE_PATTERNS], fixture.ignore.patterns);
+  for (const example of fixture.ignore.examples) {
+    assert.equal(isIgnoredPath(example.path), example.ignored, example.path);
+  }
+  for (const row of fixture.binary.cases) {
+    const bytes = new Uint8Array(row.pad + row.tail.length);
+    bytes.fill(0x61, 0, row.pad);
+    bytes.set(row.tail, row.pad);
+    assert.equal(isBinaryContent(bytes), row.binary, row.name);
+  }
+  assert.deepEqual(fixture.cacheKey.fields, [
+    "prompt_version",
+    "model",
+    "max_output_tokens",
+    "effort_sent",
+    "task",
+    "path",
+    "mode",
+    "note",
+    "content",
+  ]);
+  for (const vector of fixture.cacheKey.vectors) {
+    const encoded = encodeCacheKey([
+      String(vector.prompt_version),
+      String(vector.model),
+      String(vector.max_output_tokens),
+      vector.effort_sent == null ? "" : String(vector.effort_sent),
+      String(vector.task),
+      String(vector.path),
+      String(vector.mode),
+      vector.note == null ? "" : String(vector.note),
+      String(vector.content),
+    ]);
+    assert.equal(createHash("sha256").update(encoded).digest("hex"), vector.sha256, vector.mode);
+    const key = await makeCacheKey({
+      promptVersion: vector.prompt_version,
+      model: vector.model,
+      maxOutputTokens: vector.max_output_tokens,
+      reasoningEffort: vector.effort_sent,
+      task: vector.task,
+      path: vector.path,
+      mode: vector.mode,
+      note: vector.note,
+      content: vector.content,
+    });
+    assert.equal(key, vector.sha256, `${vector.path} ${vector.mode}`);
+  }
+  const full = fixture.cacheKey.vectors.find((vector) => vector.mode === "full" && vector.content === "abc");
+  const truncated = fixture.cacheKey.vectors.find((vector) => vector.mode === "truncated" && vector.content === "abc");
+  assert.notEqual(full.sha256, truncated.sha256);
+
+  const yes = () => ({ choices: [{ message: { content: "yes" } }] });
+  for (const row of fixture.tokenTruncation) {
+    let body = null;
+    await filterRelevant({ "a.py": row.text }, "task", {
+      cache: false,
+      maxBytes: null,
+      maxTokens: row.maxTokens,
+      log: () => {},
+      callLlm: async (req) => {
+        body = req.messages[0].content.split("File contents:\n")[1];
+        return yes();
+      },
+    });
+    assert.equal(body, row.expected, row.text);
+  }
+  for (const row of fixture.truncation) {
+    let body = null;
+    await filterRelevant({ "a.py": row.text }, "task", {
+      cache: false,
+      maxBytes: row.maxBytes,
+      maxTokens: null,
+      log: () => {},
+      callLlm: async (req) => {
+        body = req.messages[0].content.split("File contents:\n")[1];
+        return yes();
+      },
+    });
+    assert.equal(body, row.expected, row.text);
+  }
+
+  const seen = [];
+  let calls = 0;
+  const cache = new MemoryCache();
+  const callLlm = async (req) => {
+    calls += 1;
+    seen.push(req.messages[0].content);
+    return yes();
+  };
+  const opts = { cache, log: () => {}, callLlm, maxBytes: null, maxTokens: null };
+  const encoded = new TextEncoder().encode(fixture.bytes.validUtf8);
+  const first = await filterRelevant({ "a.py": encoded }, "task", opts);
+  assert.equal(first.files["a.py"], fixture.bytes.validUtf8);
+  assert.equal(first.relevant["a.py"], fixture.bytes.validUtf8);
+  assert.notEqual(first.files["a.py"], "");
+  assert.equal(first.decisions[0].skippedReason, null);
+  assert.match(seen[0], new RegExp(fixture.bytes.validUtf8));
+  const [left, right] = fixture.bytes.changed;
+  await filterRelevant({ "a.py": new TextEncoder().encode(left) }, "task", opts);
+  await filterRelevant({ "a.py": new TextEncoder().encode(right) }, "task", opts);
+  assert.equal(calls, 3);
+  const invalid = await filterRelevant({ "a.py": Uint8Array.from([0xff]) }, "task", opts);
+  assert.equal(invalid.decisions[0].skippedReason, "binary");
+  assert.equal(invalid.decisions[0].skipped_reason, "binary");
+  assert.equal(invalid.decisions[0].decision, "no");
+  assert.equal(calls, 3);
+
+  let ignoredCalls = 0;
+  const ignored = await filterRelevant(
+    { "src/app.min.mjs": "var a=1;\n", "src/app.js": "export const a = 1;\n" },
+    "task",
+    {
+      cache: false,
+      log: () => {},
+      callLlm: async () => {
+        ignoredCalls += 1;
+        return yes();
+      },
+    },
+  );
+  const skipped = ignored.decisions.find((row) => row.path === "src/app.min.mjs");
+  assert.equal(skipped.decision, "no");
+  assert.equal(skipped.skippedReason, fixture.ignore.label);
+  assert.equal(skipped.skipped_reason, fixture.ignore.label);
+  assert.equal(ignoredCalls, 1);
+
+  let malformedCalls = 0;
+  const malformedCache = new MemoryCache();
+  const openFirst = await filterRelevant({ "src/target.py": "x = 1\n" }, "edit the target", {
+    cache: malformedCache,
+    log: () => {},
+    callLlm: async () => {
+      malformedCalls += 1;
+      return { choices: [{ message: { content: "There is no doubt this file is required" } }] };
+    },
+  });
+  const openSecond = await filterRelevant({ "src/target.py": "x = 1\n" }, "edit the target", {
+    cache: malformedCache,
+    log: () => {},
+    callLlm: async () => {
+      malformedCalls += 1;
+      return { choices: [{ message: { content: "There is no doubt this file is required" } }] };
+    },
+  });
+  assert.equal(malformedCalls, 2);
+  assert.equal(openFirst.decisions[0].decision, "yes");
+  assert.equal(openFirst.decisions[0].failedOpen, true);
+  assert.equal(openFirst.failedOpen, 1);
+  assert.equal(openSecond.decisions[0].cached, false);
 });
 
 test("offline check is syntax and imports only", () => {

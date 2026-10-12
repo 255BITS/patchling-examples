@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -25,10 +26,14 @@ from filter_relevant import (
     build_prompt,
     chat_request_body,
     count_tokens,
+    decode_utf8_bytes,
+    encode_cache_key,
     filter_relevant,
     is_binary_content,
     is_ignored_path,
+    make_cache_key,
     parse_yes_no,
+    truncate_text,
     truncate_utf8,
 )
 
@@ -50,6 +55,10 @@ class ParseTests(unittest.TestCase):
         self.assertIsNone(parse_yes_no("I think yes"))
         self.assertIsNone(parse_yes_no("yeah"))
         self.assertIsNone(parse_yes_no("nope"))
+        self.assertIsNone(parse_yes_no("yes?"))
+        self.assertTrue(parse_yes_no("__yes__"))
+        self.assertFalse(parse_yes_no("“no”"))
+        self.assertFalse(parse_yes_no(" no, this file is irrelevant \nyes, the function to rename is here"))
         self.assertIsNone(parse_yes_no("There is no doubt this file is required"))
         self.assertIsNone(parse_yes_no(""))
         self.assertIsNone(parse_yes_no("   \n"))
@@ -62,7 +71,24 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(truncate_utf8("😀X", 4), "😀")
         self.assertEqual(truncate_utf8("😀X", 3), "")
         self.assertEqual(count_tokens(""), 0)
+        self.assertEqual(count_tokens("abcd"), 1)
+        self.assertEqual(count_tokens("abcde"), 2)
         self.assertEqual(count_tokens("😀😀😀😀"), 1)
+        self.assertEqual(truncate_text("abc😀def", None, 1), "abc😀")
+        self.assertEqual(truncate_text("中文测试额外", None, 1), "中文测试")
+        self.assertEqual(truncate_text("cafe\u0301XYZ", None, 1), "cafe")
+        self.assertNotIn("\ufffd", truncate_text("abc😀def", None, 1))
+        self.assertEqual(encode_cache_key(["ab"]), b"2:ab\n")
+        self.assertNotEqual(encode_cache_key(["a", "b"]), encode_cache_key(["ab"]))
+        full = make_cache_key(
+            model="m", task="edit", path="a.py", content="abc",
+            max_output_tokens=1024, reasoning_effort="low", prompt_version=3, mode="full", note="",
+        )
+        cut = make_cache_key(
+            model="m", task="edit", path="a.py", content="abc",
+            max_output_tokens=1024, reasoning_effort="low", prompt_version=3, mode="truncated", note="",
+        )
+        self.assertNotEqual(full, cut)
         self.assertEqual(FILTER_PROMPT_VERSION, 3)
         prompt = build_prompt("ink/cli.py", "def main():\n", "Remember the notebook path.")
         self.assertTrue(prompt.startswith(PROMPT_INSTRUCTIONS))
@@ -85,6 +111,7 @@ class ParseTests(unittest.TestCase):
         self.assertFalse(is_ignored_path("src/routes/books.js"))
         self.assertTrue(is_ignored_path("dist/app.min.js"))
         self.assertTrue(is_ignored_path("Package.resolved"))
+        self.assertTrue(is_ignored_path("src/app.min.mjs"))
 
     def test_chat_body(self):
         body = chat_request_body(
@@ -286,6 +313,185 @@ class FilterTests(unittest.TestCase):
         self.assertTrue(any("read failed" in message for message in logs))
         self.assertTrue(any("write failed" in message for message in logs))
 
+    def test_changed_bytes_at_the_same_path(self):
+        calls = []
+        cache = MemoryCache()
+
+        def call_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+            calls.append(messages[0]["content"])
+            return {"choices": [{"message": {"content": "yes"}}]}
+
+        task = "Edit the target module only."
+        alpha = "alpha = 1\n".encode()
+        beta = "beta = 2\n".encode()
+        first = filter_relevant(
+            {"src/target.py": alpha},
+            task,
+            call_llm=call_llm,
+            cache=cache,
+            log=lambda _message: None,
+        )
+        second = filter_relevant(
+            {"src/target.py": beta},
+            task,
+            call_llm=call_llm,
+            cache=cache,
+            log=lambda _message: None,
+        )
+        self.assertEqual(len(calls), 2)
+        self.assertIn("alpha = 1", calls[0])
+        self.assertIn("beta = 2", calls[1])
+        self.assertFalse(first["decisions"][0]["cached"])
+        self.assertFalse(second["decisions"][0]["cached"])
+        self.assertEqual(first["relevant"]["src/target.py"], "alpha = 1\n")
+        self.assertEqual(second["relevant"]["src/target.py"], "beta = 2\n")
+        self.assertEqual(decode_utf8_bytes(alpha), "alpha = 1\n")
+        third = filter_relevant(
+            {"src/target.py": beta},
+            task,
+            call_llm=call_llm,
+            cache=cache,
+            log=lambda _message: None,
+        )
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(third["decisions"][0]["cached"])
+        bad = filter_relevant(
+            {"a.bin": bytes([0x61, 0xFF])},
+            task,
+            call_llm=call_llm,
+            cache=False,
+            log=lambda _message: None,
+        )
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(bad["decisions"][0]["skipped_reason"], "binary")
+        self.assertEqual(bad["decisions"][0]["skippedReason"], "binary")
+        self.assertNotIn("a.bin", bad["relevant"])
+
+    def test_broken_envelope_fails_open_uncached(self):
+        cache = MemoryCache()
+        bad = [
+            None,
+            "not-json",
+            '{"choices":[{"message":{"content":"yes"}}]}',
+            {},
+            {"choices": []},
+            {"choices": [{}]},
+            {"choices": [{"message": {}}]},
+            {"choices": [{"message": {"content": None}}]},
+            {"choices": [{"message": {"content": ""}}]},
+        ]
+        calls = {"n": 0}
+
+        def call_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+            calls["n"] += 1
+            return bad[min(calls["n"], len(bad)) - 1]
+
+        opts = {"call_llm": call_llm, "cache": cache, "log": lambda _message: None}
+        first = filter_relevant({"a.py": "x"}, "Update the helper and its caller.", **opts)
+        second = filter_relevant({"a.py": "x"}, "Update the helper and its caller.", **opts)
+        self.assertEqual(calls["n"], 2)
+        self.assertEqual(first["failed_open"], 1)
+        self.assertEqual(second["failed_open"], 1)
+        self.assertEqual(first["relevant"]["a.py"], "x")
+        self.assertFalse(first["decisions"][0]["cached"])
+        for response in bad:
+            def one_response(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None, response=response):
+                return response
+
+            result = filter_relevant(
+                {"a.py": "x"},
+                "Update the helper and its caller.",
+                call_llm=one_response,
+                cache=False,
+                log=lambda _message: None,
+            )
+            self.assertEqual(result["failed_open"], 1, response)
+            self.assertEqual(result["relevant"]["a.py"], "x")
+
+    def test_rejected_effort_is_stored_under_the_empty_key(self):
+        cache = MemoryCache()
+        calls = {"n": 0}
+
+        def call_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+            calls["n"] += 1
+            if reasoning_effort:
+                error = RuntimeError("LLM 400: unsupported parameter reasoning_effort")
+                error.status = 400
+                raise error
+            return {"choices": [{"message": {"content": "no"}}]}
+
+        opts = {
+            "call_llm": call_llm,
+            "cache": cache,
+            "log": lambda _message: None,
+            "retry_base_ms": 0,
+            "sleep": lambda _ms: None,
+        }
+        first = filter_relevant({"a.py": "x"}, "Update the helper and its caller.", **opts)
+        self.assertEqual(calls["n"], 2)
+        self.assertEqual(first["dropped"]["a.py"], "x")
+        second = filter_relevant({"a.py": "x"}, "Update the helper and its caller.", **opts)
+        self.assertEqual(calls["n"], 2)
+        self.assertTrue(second["decisions"][0]["cached"])
+        self.assertEqual(second["dropped"]["a.py"], "x")
+
+    def test_typeerror_is_not_a_rejected_effort(self):
+        calls = {"n": 0}
+
+        def call_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+            calls["n"] += 1
+            raise TypeError("unsupported")
+
+        result = filter_relevant(
+            {"a.py": "x"},
+            "Update the helper and its caller.",
+            call_llm=call_llm,
+            cache=False,
+            log=lambda _message: None,
+        )
+        self.assertEqual(calls["n"], 1)
+        self.assertEqual(result["failed_open"], 1)
+        self.assertEqual(result["relevant"]["a.py"], "x")
+
+    def test_ordinary_yes_is_requested_once(self):
+        calls = {"n": 0}
+
+        def call_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+            calls["n"] += 1
+            return {"choices": [{"message": {"content": "yes"}}]}
+
+        result = filter_relevant(
+            {"a.py": "x"},
+            "Update the helper and its caller.",
+            call_llm=call_llm,
+            cache=False,
+            log=lambda _message: None,
+        )
+        self.assertEqual(calls["n"], 1)
+        self.assertEqual(result["failed_open"], 0)
+        self.assertIsNone(result["decisions"][0]["skipped_reason"])
+
+    def test_minified_modules_are_ignored(self):
+        calls = {"n": 0}
+
+        def call_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+            calls["n"] += 1
+            self.assertIn("File path:\nsrc/app.js\n", messages[0]["content"])
+            return {"choices": [{"message": {"content": "yes"}}]}
+
+        result = filter_relevant(
+            {"src/app.min.mjs": "bundle", "src/app.js": "source"},
+            "Update the helper and its caller.",
+            call_llm=call_llm,
+            cache=False,
+            log=lambda _message: None,
+        )
+        self.assertEqual(calls["n"], 1)
+        skipped = next(row for row in result["decisions"] if row["path"] == "src/app.min.mjs")
+        self.assertEqual(skipped["skipped_reason"], "ignored")
+        self.assertEqual(skipped["skippedReason"], "ignored")
+        self.assertFalse(skipped["relevant"])
+
 
 class CorpusTests(unittest.TestCase):
     def test_corpus_matches_projects(self):
@@ -329,6 +535,203 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(dry.returncode, 0, dry.stderr)
         self.assertIn("File path:\nREADME.md", dry.stdout)
         self.assertIn("exit with status 2", dry.stdout)
+
+
+class ParityFixtureTests(unittest.TestCase):
+    FIXTURE_SHA256 = "90b7299375518fbc6cb9bfeacb536f46f95c17ed72f8f66d063592bfdaec4665"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.raw = (HERE / "fixtures" / "parity" / "relevance.json").read_bytes()
+        cls.fixture = json.loads(cls.raw.decode("utf-8"))
+
+    def test_sha256(self):
+        self.assertEqual(hashlib.sha256(self.raw).hexdigest(), self.FIXTURE_SHA256)
+
+    def test_tokens_parser_ignore_and_keys(self):
+        from filter_relevant import DEFAULT_IGNORE_PATTERNS
+
+        fixture = self.fixture
+        self.assertEqual(FILTER_PROMPT_VERSION, fixture["promptVersion"])
+        self.assertEqual(DEFAULT_FILTER_MAX_OUTPUT_TOKENS, fixture["maxOutputTokens"])
+        self.assertEqual(DEFAULT_FILTER_REASONING_EFFORT, fixture["reasoningEffort"])
+        self.assertEqual(fixture["tokenEstimate"]["rule"], "ceil(code_points/4)")
+        self.assertEqual(count_tokens(""), fixture["tokenEstimate"]["empty"])
+        for example in fixture["tokenEstimate"]["examples"]:
+            self.assertEqual(count_tokens(example["text"]), example["tokens"], example["text"])
+        for row in fixture["tokenTruncation"]:
+            got = truncate_text(row["text"], None, row["maxTokens"])
+            self.assertEqual(got, row["expected"], row["text"])
+            self.assertNotIn("\ufffd", got)
+        for row in fixture["truncation"]:
+            got = truncate_utf8(row["text"], row["maxBytes"])
+            self.assertEqual(got, row["expected"], row["text"])
+            self.assertNotIn("\ufffd", got)
+        for row in fixture["parser"]:
+            parsed = parse_yes_no(row["raw"])
+            decision = "yes" if parsed is True else "no" if parsed is False else None
+            self.assertEqual(decision, row["decision"], row["raw"])
+        self.assertTrue(fixture["malformedIsFailedOpen"])
+        self.assertEqual(fixture["ignore"]["label"], "ignored")
+        self.assertEqual(list(DEFAULT_IGNORE_PATTERNS), fixture["ignore"]["patterns"])
+        for example in fixture["ignore"]["examples"]:
+            self.assertEqual(is_ignored_path(example["path"]), example["ignored"], example["path"])
+        for row in fixture["binary"]["cases"]:
+            raw = b"a" * row["pad"] + bytes(row["tail"])
+            self.assertEqual(is_binary_content(raw), row["binary"], row["name"])
+        self.assertEqual(
+            fixture["cacheKey"]["fields"],
+            [
+                "prompt_version",
+                "model",
+                "max_output_tokens",
+                "effort_sent",
+                "task",
+                "path",
+                "mode",
+                "note",
+                "content",
+            ],
+        )
+        for vector in fixture["cacheKey"]["vectors"]:
+            key = make_cache_key(
+                model=vector["model"],
+                task=vector["task"],
+                path=vector["path"],
+                content=vector["content"],
+                max_output_tokens=vector["max_output_tokens"],
+                reasoning_effort=vector["effort_sent"],
+                prompt_version=vector["prompt_version"],
+                mode=vector["mode"],
+                note=vector["note"],
+            )
+            encoded = encode_cache_key([
+                str(vector["prompt_version"]),
+                str(vector["model"]),
+                str(vector["max_output_tokens"]),
+                "" if vector["effort_sent"] is None else str(vector["effort_sent"]),
+                str(vector["task"]),
+                str(vector["path"]),
+                str(vector["mode"]),
+                "" if vector["note"] is None else str(vector["note"]),
+                str(vector["content"]),
+            ])
+            self.assertEqual(hashlib.sha256(encoded).hexdigest(), vector["sha256"], vector["mode"])
+            self.assertEqual(key, vector["sha256"], f"{vector['path']} {vector['mode']}")
+        full = next(vector for vector in fixture["cacheKey"]["vectors"] if vector["mode"] == "full" and vector["content"] == "abc")
+        cut = next(vector for vector in fixture["cacheKey"]["vectors"] if vector["mode"] == "truncated" and vector["content"] == "abc")
+        self.assertNotEqual(full["sha256"], cut["sha256"])
+
+    def test_filter_runs_the_fixture(self):
+        fixture = self.fixture
+
+        for row in fixture["tokenTruncation"]:
+            seen = {}
+
+            def call_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None, seen=seen):
+                seen["body"] = messages[0]["content"].split("File contents:\n", 1)[1]
+                return {"choices": [{"message": {"content": "no"}}]}
+
+            filter_relevant(
+                {"a.py": row["text"]},
+                "task",
+                call_llm=call_llm,
+                cache=False,
+                max_bytes=None,
+                max_tokens=row["maxTokens"],
+                log=lambda _message: None,
+            )
+            self.assertEqual(seen["body"], row["expected"], row["text"])
+        for row in fixture["truncation"]:
+            seen = {}
+
+            def call_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None, seen=seen):
+                seen["body"] = messages[0]["content"].split("File contents:\n", 1)[1]
+                return {"choices": [{"message": {"content": "no"}}]}
+
+            filter_relevant(
+                {"a.py": row["text"]},
+                "task",
+                call_llm=call_llm,
+                cache=False,
+                max_bytes=row["maxBytes"],
+                max_tokens=None,
+                log=lambda _message: None,
+            )
+            self.assertEqual(seen["body"], row["expected"], row["text"])
+
+        seen = []
+        calls = {"n": 0}
+        cache = MemoryCache()
+
+        def call_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+            calls["n"] += 1
+            seen.append(messages[0]["content"])
+            return {"choices": [{"message": {"content": "yes"}}]}
+
+        opts = {"call_llm": call_llm, "cache": cache, "log": lambda _message: None, "max_bytes": None, "max_tokens": None}
+        encoded = fixture["bytes"]["validUtf8"].encode("utf-8")
+        first = filter_relevant({"a.py": encoded}, "task", **opts)
+        self.assertEqual(first["files"]["a.py"], fixture["bytes"]["validUtf8"])
+        self.assertEqual(first["relevant"]["a.py"], fixture["bytes"]["validUtf8"])
+        self.assertNotEqual(first["files"]["a.py"], "")
+        self.assertIsNone(first["decisions"][0]["skipped_reason"])
+        self.assertIn(fixture["bytes"]["validUtf8"], seen[0])
+        left, right = fixture["bytes"]["changed"]
+        filter_relevant({"a.py": left.encode("utf-8")}, "task", **opts)
+        filter_relevant({"a.py": right.encode("utf-8")}, "task", **opts)
+        self.assertEqual(calls["n"], 3)
+        invalid = filter_relevant({"a.py": bytes([0xFF])}, "task", **opts)
+        self.assertEqual(invalid["decisions"][0]["skipped_reason"], "binary")
+        self.assertEqual(invalid["decisions"][0]["skippedReason"], "binary")
+        self.assertEqual(invalid["decisions"][0]["decision"], "no")
+        self.assertEqual(calls["n"], 3)
+
+        ignored_calls = {"n": 0}
+
+        def ignored_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+            ignored_calls["n"] += 1
+            return {"choices": [{"message": {"content": "yes"}}]}
+
+        ignored = filter_relevant(
+            {"src/app.min.mjs": "var a=1;\n", "src/app.js": "export const a = 1;\n"},
+            "task",
+            call_llm=ignored_llm,
+            cache=False,
+            log=lambda _message: None,
+        )
+        skipped = next(row for row in ignored["decisions"] if row["path"] == "src/app.min.mjs")
+        self.assertEqual(skipped["decision"], "no")
+        self.assertEqual(skipped["skipped_reason"], fixture["ignore"]["label"])
+        self.assertEqual(skipped["skippedReason"], fixture["ignore"]["label"])
+        self.assertEqual(ignored_calls["n"], 1)
+
+        malformed = {"n": 0}
+        malformed_cache = MemoryCache()
+
+        def malformed_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+            malformed["n"] += 1
+            return {"choices": [{"message": {"content": "There is no doubt this file is required"}}]}
+
+        open_first = filter_relevant(
+            {"src/target.py": "x = 1\n"},
+            "edit the target",
+            call_llm=malformed_llm,
+            cache=malformed_cache,
+            log=lambda _message: None,
+        )
+        open_second = filter_relevant(
+            {"src/target.py": "x = 1\n"},
+            "edit the target",
+            call_llm=malformed_llm,
+            cache=malformed_cache,
+            log=lambda _message: None,
+        )
+        self.assertEqual(malformed["n"], 2)
+        self.assertEqual(open_first["decisions"][0]["decision"], "yes")
+        self.assertTrue(open_first["decisions"][0]["failed_open"])
+        self.assertEqual(open_first["failed_open"], 1)
+        self.assertFalse(open_second["decisions"][0]["cached"])
 
 
 class InkSampleTests(unittest.TestCase):
