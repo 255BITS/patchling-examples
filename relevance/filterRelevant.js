@@ -83,7 +83,7 @@ export const PROMPT_INSTRUCTIONS = [
 const ANSWER_PREFIX = /^(?:answer|decision)\s*[:\-]\s*/i;
 const FENCE_LINE = /^```[a-zA-Z0-9_-]*\s*$/;
 const WRAPPERS = /[\s"'`*_“”‘’]/;
-const LEADING_ANSWER = /^(yes|no)(?=$|\s|[.,!:;)])/i;
+const LEADING_ANSWER = /^(yes|no)["'`*_“”‘’]*(?=$|\s|[.,!:;)])/iu;
 
 /**
  * Unicode code points, rounded up. Empty text is 0. A surrogate pair is one code point.
@@ -155,18 +155,18 @@ function prefixPlausible(bytes, index, have, need) {
 }
 
 /**
- * First 8192 bytes. A NUL or a genuinely invalid UTF-8 byte is binary.
- * An incomplete tail of at most 3 bytes after real text is not. A non-empty
+ * Whole payload. A NUL or an invalid UTF-8 byte anywhere is binary.
+ * An incomplete tail of at most 3 bytes is text only when the file ends
+ * inside the 8192-byte probe and some valid text came first. A non-empty
  * buffer that decodes to empty text is binary.
  * @param {Uint8Array} bytes
  * @returns {boolean}
  */
 function sampleIsBinary(bytes) {
-  const sample = bytes.subarray(0, BINARY_PROBE_BYTES);
-  const size = sample.length;
+  const size = bytes.length;
   let index = 0;
   while (index < size) {
-    const lead = sample[index];
+    const lead = bytes[index];
     if (lead === 0) return true;
     if (lead < 0x80) {
       index += 1;
@@ -177,10 +177,11 @@ function sampleIsBinary(bytes) {
     if (index + need > size) {
       const have = size - index;
       if (have > 3) return true;
-      if (!prefixPlausible(sample, index, have, need)) return true;
+      if (!prefixPlausible(bytes, index, have, need)) return true;
+      if (size > BINARY_PROBE_BYTES) return true;
       return index === 0;
     }
-    if (!sequenceValid(sample, index, need)) return true;
+    if (!sequenceValid(bytes, index, need)) return true;
     index += need;
   }
   return false;
@@ -214,7 +215,7 @@ export function truncateUtf8(text, maxBytes) {
     if (!need || index + need > maxBytes || !sequenceValid(bytes, index, need)) break;
     index += need;
   }
-  return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, index));
+  return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes.subarray(0, index));
 }
 
 /**
@@ -364,13 +365,14 @@ export async function makeCacheKey(fields) {
 }
 
 /**
- * Valid UTF-8, including an incomplete trailing sequence, becomes text.
+ * Valid UTF-8 becomes text. A leading BOM is kept. An incomplete tail is dropped.
  * @param {Uint8Array} bytes
  * @returns {string}
  */
 export function decodeUtf8Bytes(bytes) {
+  const decode = (chunk) => new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(chunk);
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return decode(bytes);
   } catch {
     let index = 0;
     while (index < bytes.length) {
@@ -378,7 +380,7 @@ export function decodeUtf8Bytes(bytes) {
       if (!need || index + need > bytes.length || !sequenceValid(bytes, index, need)) break;
       index += need;
     }
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, index));
+    return decode(bytes.subarray(0, index));
   }
 }
 
