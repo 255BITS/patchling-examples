@@ -163,13 +163,18 @@ TODO: turn this plan into a real, playable game.</textarea>
 import { buildEnvironment, generateDiff, smartapply, parseDiffPerFile, callLlmForApply, setEnv }
   from "https://esm.sh/patchling";
 
-const DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
-const APPLY_DEFAULT = "xiaomi/mimo-v2.5-pro-ultraspeed"; // smartapply default (fast, mechanical)
+const DEFAULT_MODEL = "xiaomi/mimo-v2.6-flash";
+const APPLY_DEFAULT = DEFAULT_MODEL; // smartapply default (fast, mechanical)
+// Replace the previous factory default while preserving custom saved choices.
+const storedModel = (key, fallback) => {
+  const saved = localStorage.getItem(key);
+  return saved && saved !== "xiaomi/mimo-v2.5-pro-ultraspeed" ? saved : fallback;
+};
 const NANOGPT = "https://nano-gpt.com";
 const $ = (id) => document.getElementById(id);
 
-let MODEL = localStorage.getItem("ngpt_model") || DEFAULT_MODEL;        // selectable DIFF model
-let APPLY = localStorage.getItem("ngpt_apply_model") || APPLY_DEFAULT;  // selectable APPLY model
+let MODEL = storedModel("ngpt_model", DEFAULT_MODEL);        // selectable DIFF model
+let APPLY = storedModel("ngpt_apply_model", APPLY_DEFAULT);  // selectable APPLY model
 let pickerTarget = "diff";                                             // which row the picker edits
 
 // NanoGPT canonicalizes the loopback host to "localhost"; start there so the OAuth
@@ -261,7 +266,7 @@ const LABS = [
   ["Mistral", /mistral-large/i],
 ];
 // Always pinned at the very top, in this order (default first).
-const PINNED = ["xiaomi/mimo-v2.5-pro-ultraspeed", "moonshotai/kimi-k2.7-code-highspeed", "moonshotai/kimi-k2.7-code"];
+const PINNED = [DEFAULT_MODEL, "xiaomi/mimo-v2.6-pro", "z-ai/glm-5.3-flash"];
 // Exclude small/cheap/variant rows. \bmini\b avoids matching "geMINI".
 const SMALL = /flash|nano|\blite\b|\bmini\b|-mini|\bsmall\b|tiny|oss|guard|preview|search|codex|:(low|medium|high|thinking)|cheaper|multi-agent|-\d+b\b|a\d+b\b|^tee\//i;
 const px = (x) => (x == null ? null : "$" + Number(x).toFixed(2));
@@ -482,7 +487,7 @@ async function run() {
   const timer = setInterval(() => { $("elapsed").textContent = ((performance.now() - t0) / 1000).toFixed(1); }, 100);
 
   try {
-    // Diff uses the selected model; smartapply is locked to ultraspeed (fast, mechanical).
+    // Diff uses the selected model; smartapply uses its separately selected model.
     const diff = await generateDiff(buildEnvironment(files), $("goal").value, { apiKey: key, model: MODEL, callLlm: streamingCallLlm("Generating diff") });
     const parsed = parseDiffPerFile(diff);
     if (!diff.trim() || !parsed.length) {

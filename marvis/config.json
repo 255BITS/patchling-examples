@@ -1,7 +1,7 @@
 {
   "name": "MARVIS",
   "userNames": ["boss", "you", "sir", "mikkel", "me", "user"],
-  "image": { "model": "hidream-i1-fast", "size": "832x1216" },
+  "image": { "model": "hidream-i1-fast", "size": "768x1024" },
   "defaultDirection": "Let it drift a little: nudge its mood to match the recent conversation, and add a memory bullet if something noteworthy happened. Leave its soul, look and the page theme unless they clearly should change.",
   "copy": {
     "title": "MARVIS · yours forever (#keep4o)",

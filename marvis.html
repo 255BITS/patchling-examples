@@ -137,7 +137,7 @@ const $ = (id) => document.getElementById(id);
 //  These constants are only fallbacks if a config field is missing.
 // ===================================================================
 const IMG_MODEL_DEFAULT = "hidream-i1-fast";
-const IMG_SIZE_DEFAULT  = "832x1216";
+const IMG_SIZE_DEFAULT  = "768x1024";
 const DEFAULT_NOTE_FALLBACK = "Let it drift a little: nudge its mood to match the recent conversation, and add a memory bullet if something noteworthy happened. Leave its soul, look and the page theme unless they clearly should change.";
 const BRIEF_FALLBACK = "The boss wants to change who this character is. Make that one change real by editing the persona files: mood.md (rewrite), memory.md (append a bullet if worth keeping), soul.md (only for a deep shift), portrait.md (only if the look changes — it re-renders the face), config.json and style.css (only if the request calls for it). You do not have access to chat.md. Apply only the requested change, keep it coherent, invent nothing unrelated.";
 const CONFIG_FILES = new Set(["config.json", "brief.md", "style.css"]); // app/theme/prompt files — tinted gold; MARVIS can edit these too
@@ -381,8 +381,13 @@ const { buildEnvironment, generateDiff, smartapply, parseDiffPerFile, callLlmFor
   await import("https://esm.sh/patchling");
 
 // ---------- endpoints + runtime config (filled by applyConfig) ----------
-const DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
-const APPLY_DEFAULT = "xiaomi/mimo-v2.5-pro-ultraspeed";
+const DEFAULT_MODEL = "xiaomi/mimo-v2.6-flash";
+const APPLY_DEFAULT = DEFAULT_MODEL;
+// Replace the previous factory default while preserving custom saved choices.
+const storedModel = (key, fallback) => {
+  const saved = localStorage.getItem(key);
+  return saved && saved !== "xiaomi/mimo-v2.5-pro-ultraspeed" ? saved : fallback;
+};
 const NANOGPT = "https://nano-gpt.com";
 const IMG_ENDPOINT = `${NANOGPT}/v1/images/generations`;
 const IMG_PRICE_EST = 0.03; // $/image fallback if the API omits an exact cost
@@ -394,8 +399,8 @@ let IMG_MODEL = IMG_MODEL_DEFAULT, IMG_SIZE = IMG_SIZE_DEFAULT;
 let DEFAULT_NOTE = DEFAULT_NOTE_FALLBACK;
 let lastGoodConfig = {};
 
-let MODEL = localStorage.getItem("ngpt_model") || DEFAULT_MODEL;
-let APPLY = localStorage.getItem("ngpt_apply_model") || APPLY_DEFAULT;
+let MODEL = storedModel("ngpt_model", DEFAULT_MODEL);
+let APPLY = storedModel("ngpt_apply_model", APPLY_DEFAULT);
 let pickerTarget = "diff";
 
 if (location.hostname === "127.0.0.1") location.hostname = "localhost";
@@ -479,7 +484,7 @@ const LABS = [
   ["Qwen", /qwen[0-9.]*-max/i],
   ["Mistral", /mistral-large/i],
 ];
-const PINNED = ["xiaomi/mimo-v2.5-pro-ultraspeed", "moonshotai/kimi-k2.7-code-highspeed", "moonshotai/kimi-k2.7-code"];
+const PINNED = [DEFAULT_MODEL, "xiaomi/mimo-v2.6-pro", "z-ai/glm-5.3-flash"];
 const SMALL = /flash|nano|\blite\b|\bmini\b|-mini|\bsmall\b|tiny|oss|guard|preview|search|codex|:(low|medium|high|thinking)|cheaper|multi-agent|-\d+b\b|a\d+b\b|^tee\//i;
 const px = (x) => (x == null ? null : "$" + Number(x).toFixed(2));
 const priceOf = (id) => (allModels || []).find((m) => m.id === id);

@@ -1,0 +1,291 @@
+{
+  "verifiedOn": "2026-10-13",
+  "sources": {
+    "text": "https://nano-gpt.com/api/v1/models?detailed=true",
+    "images": "https://nano-gpt.com/api/v1/image-models"
+  },
+  "catalogSha256": {
+    "nanogpt-models.json": "0ff41c8e54be2645c386bd00a712dca92e8b9103468ea28a0fd0a7e12c2aa89e",
+    "nanogpt-image-models.json": "7ffe1b76b821f98fa96f6c9a1660352aca5ee63798427eb55d76377e19ac135d"
+  },
+  "text": {
+    "z-ai/glm-5.3-flash": {
+      "created": 1787702400,
+      "context_length": 1048576,
+      "max_output_tokens": 131072,
+      "architecture": {
+        "modality": "text+image+video->text",
+        "input_modalities": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output_modalities": [
+          "text"
+        ]
+      },
+      "capabilities": {
+        "vision": true,
+        "video_input": true,
+        "audio_input": false,
+        "reasoning": true,
+        "tool_calling": true,
+        "parallel_tool_calls": false,
+        "structured_output": true,
+        "pdf_upload": false,
+        "batch_api": true
+      },
+      "reasoning_efforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "pricing": {
+        "prompt": 0.1,
+        "completion": 0.3,
+        "cacheReadInputPer1kTokens": 2.5e-05,
+        "currency": "USD",
+        "unit": "per_million_tokens"
+      }
+    },
+    "xiaomi/mimo-v2.6-flash": {
+      "created": 1789948800,
+      "context_length": 1048576,
+      "max_output_tokens": 131072,
+      "architecture": {
+        "modality": "text+image+video+audio->text",
+        "input_modalities": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output_modalities": [
+          "text"
+        ]
+      },
+      "capabilities": {
+        "vision": true,
+        "video_input": true,
+        "audio_input": true,
+        "reasoning": true,
+        "tool_calling": true,
+        "parallel_tool_calls": false,
+        "structured_output": true,
+        "pdf_upload": false,
+        "batch_api": true
+      },
+      "reasoning_efforts": [
+        "none",
+        "high"
+      ],
+      "pricing": {
+        "prompt": 0.13999999999999999,
+        "completion": 0.27999999999999997,
+        "cacheReadInputPer1kTokens": 2.8e-06,
+        "cacheWriteInputPer1kTokens": 0,
+        "currency": "USD",
+        "unit": "per_million_tokens"
+      }
+    },
+    "xiaomi/mimo-v2.6-pro": {
+      "created": 1789948800,
+      "context_length": 1048576,
+      "max_output_tokens": 131072,
+      "architecture": {
+        "modality": "text+image+video+audio->text",
+        "input_modalities": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "output_modalities": [
+          "text"
+        ]
+      },
+      "capabilities": {
+        "vision": true,
+        "video_input": true,
+        "audio_input": true,
+        "reasoning": true,
+        "tool_calling": true,
+        "parallel_tool_calls": false,
+        "structured_output": true,
+        "pdf_upload": false,
+        "batch_api": true
+      },
+      "reasoning_efforts": [
+        "none",
+        "high"
+      ],
+      "pricing": {
+        "prompt": 0.435,
+        "completion": 0.87,
+        "cacheReadInputPer1kTokens": 3.6e-06,
+        "cacheWriteInputPer1kTokens": 0,
+        "currency": "USD",
+        "unit": "per_million_tokens"
+      }
+    }
+  },
+  "images": {
+    "nano-banana-2-lite": {
+      "created": 1782777600,
+      "capabilities": {
+        "image_generation": true,
+        "image_to_image": true,
+        "inpainting": false,
+        "nsfw": false
+      },
+      "pricing": {
+        "per_image": {
+          "1k": 0.04,
+          "auto": 0.04
+        },
+        "currency": "USD"
+      },
+      "resolutions": [
+        "1k"
+      ]
+    },
+    "ideogram:4@0": {
+      "created": 1780444800,
+      "capabilities": {
+        "image_generation": true,
+        "image_to_image": false,
+        "inpainting": false,
+        "nsfw": false
+      },
+      "pricing": {
+        "per_image": {
+          "2048x2048": 0.06,
+          "1440x2880": 0.06,
+          "2880x1440": 0.06,
+          "1664x2496": 0.06,
+          "2496x1664": 0.06,
+          "1792x2240": 0.06,
+          "2240x1792": 0.06,
+          "1440x2560": 0.06,
+          "2560x1440": 0.06,
+          "1600x2560": 0.06,
+          "2560x1600": 0.06,
+          "1728x2304": 0.06,
+          "2304x1728": 0.06,
+          "1296x3168": 0.06,
+          "3168x1296": 0.06,
+          "1152x2944": 0.06,
+          "2944x1152": 0.06,
+          "1248x3328": 0.06,
+          "3328x1248": 0.06,
+          "1280x3072": 0.06,
+          "3072x1280": 0.06,
+          "1024x3072": 0.06,
+          "3072x1024": 0.06,
+          "auto": 0.06
+        },
+        "currency": "USD"
+      },
+      "resolutions": [
+        "2048x2048",
+        "1440x2880",
+        "2880x1440",
+        "1664x2496",
+        "2496x1664",
+        "1792x2240",
+        "2240x1792",
+        "1440x2560",
+        "2560x1440",
+        "1600x2560",
+        "2560x1600",
+        "1728x2304",
+        "2304x1728",
+        "1296x3168",
+        "3168x1296",
+        "1152x2944",
+        "2944x1152",
+        "1248x3328",
+        "3328x1248",
+        "1280x3072",
+        "3072x1280",
+        "1024x3072",
+        "3072x1024"
+      ]
+    },
+    "gpt-image-2": {
+      "created": 1776729600,
+      "capabilities": {
+        "image_generation": true,
+        "image_to_image": true,
+        "inpainting": false,
+        "nsfw": false
+      },
+      "pricing": {
+        "per_image": {
+          "1024x1024": 0.06551,
+          "1024x768": 0.05225,
+          "1024x1536": 0.05351,
+          "1536x1024": 0.05351,
+          "1152x2048": 0.06551,
+          "2048x1152": 0.07133,
+          "2560x1440": 0.07289,
+          "auto": 0.06551
+        },
+        "currency": "USD"
+      },
+      "resolutions": [
+        "1024x1024",
+        "1024x768",
+        "1024x1536",
+        "1536x1024",
+        "1152x2048",
+        "2048x1152",
+        "2560x1440"
+      ]
+    },
+    "hidream-i1-fast": {
+      "created": 1704067200,
+      "capabilities": {
+        "image_generation": true,
+        "image_to_image": false,
+        "inpainting": false,
+        "nsfw": false
+      },
+      "pricing": {
+        "per_image": {
+          "1024x1024": 0.0034,
+          "1920x1080": 0.0051,
+          "1080x1920": 0.0051,
+          "768x1024": 0.0034,
+          "1024x768": 0.0034
+        },
+        "currency": "USD"
+      },
+      "resolutions": [
+        "1024x1024",
+        "1920x1080",
+        "1080x1920",
+        "768x1024",
+        "1024x768"
+      ]
+    },
+    "flux-2-klein-base-4b/edit": {
+      "created": 1779062400,
+      "capabilities": {
+        "image_generation": true,
+        "image_to_image": true,
+        "inpainting": false,
+        "nsfw": false
+      },
+      "pricing": {
+        "per_image": {
+          "auto": 0.015
+        },
+        "currency": "USD"
+      },
+      "resolutions": [
+        "auto"
+      ]
+    }
+  }
+}

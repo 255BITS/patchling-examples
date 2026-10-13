@@ -203,8 +203,13 @@
 import { buildEnvironment, generateDiff, smartapply, parseDiffPerFile, callLlmForApply, setEnv }
   from "https://esm.sh/patchling";
 
-const DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
-const APPLY_DEFAULT = "xiaomi/mimo-v2.5-pro-ultraspeed";
+const DEFAULT_MODEL = "xiaomi/mimo-v2.6-flash";
+const APPLY_DEFAULT = DEFAULT_MODEL;
+// Replace the previous factory default while preserving custom saved choices.
+const storedModel = (key, fallback) => {
+  const saved = localStorage.getItem(key);
+  return saved && saved !== "xiaomi/mimo-v2.5-pro-ultraspeed" ? saved : fallback;
+};
 const NANOGPT = "https://nano-gpt.com";
 const IMG_ENDPOINT = `${NANOGPT}/v1/images/generations`;
 const DEFAULT_MODEL_IMG = "ideogram:4@0"; // image model that draws the page (overridable in config.json)
@@ -212,8 +217,8 @@ const DEFAULT_SIZE = "1664x2496"; // portrait comic page
 const IMG_PRICE_EST = 0.10; // $/image fallback used only if the API omits an exact cost
 const $ = (id) => document.getElementById(id);
 
-let MODEL = localStorage.getItem("ngpt_model") || DEFAULT_MODEL;
-let APPLY = localStorage.getItem("ngpt_apply_model") || APPLY_DEFAULT;
+let MODEL = storedModel("ngpt_model", DEFAULT_MODEL);
+let APPLY = storedModel("ngpt_apply_model", APPLY_DEFAULT);
 let pickerTarget = "diff";
 
 if (location.hostname === "127.0.0.1") location.hostname = "localhost";
@@ -295,7 +300,7 @@ const LABS = [
   ["Qwen", /qwen[0-9.]*-max/i],
   ["Mistral", /mistral-large/i],
 ];
-const PINNED = ["xiaomi/mimo-v2.5-pro-ultraspeed", "moonshotai/kimi-k2.7-code-highspeed", "moonshotai/kimi-k2.7-code"];
+const PINNED = [DEFAULT_MODEL, "xiaomi/mimo-v2.6-pro", "z-ai/glm-5.3-flash"];
 const SMALL = /flash|nano|\blite\b|\bmini\b|-mini|\bsmall\b|tiny|oss|guard|preview|search|codex|:(low|medium|high|thinking)|cheaper|multi-agent|-\d+b\b|a\d+b\b|^tee\//i;
 const px = (x) => (x == null ? null : "$" + Number(x).toFixed(2));
 const priceOf = (id) => (allModels || []).find((m) => m.id === id);

@@ -81,11 +81,14 @@ def live_filter(files: dict[str, str], task: str, model: str):
             mark = "no"
         print(f"{mark:<6} {decision['path']}")
 
+    # MiMo advertises none/high. Keep custom models on the filter's default effort.
+    effort = {"reasoning_effort": "none"} if model == CHEAP_MODEL else {}
     result = filter_relevant(
         files,
         task,
         call_llm=post_chat,
         model=model,
+        **effort,
         api_key=api_key,
         base_url=base_url,
         on_decision=on_decision,

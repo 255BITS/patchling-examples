@@ -15,7 +15,28 @@ no install.
 ## `index.html` — diff → smartapply
 
 The original demo: one self-contained file that uses patchling (loaded from `esm.sh`) with
-NanoGPT's `xiaomi/mimo-v2.5-pro-ultraspeed`, streaming progress (live tokens + USD cost) as it works.
+NanoGPT's `xiaomi/mimo-v2.6-flash`, streaming progress (live tokens + USD cost) as it works.
+
+The six diff/apply demos use MiMo 2.6 Flash by default and pin MiMo 2.6 Pro
+and GLM 5.3 Flash as alternatives. Previous factory defaults saved in the
+browser are replaced; custom choices are preserved. Picture Me starts with
+`flux-2-klein-base-4b/edit` for images and MiMo 2.6 Flash for prompt writing.
+Live catalogs still populate every picker.
+
+IDs, capabilities, prices, and image sizes were verified on 2026-10-13 using
+NanoGPT's [text catalog](https://nano-gpt.com/api/v1/models?detailed=true) and
+[image catalog](https://nano-gpt.com/api/v1/image-models). The offline snapshot
+is `test/fixtures/demo-models.json`. Relevance walkthroughs request MiMo's
+supported `none` reasoning effort; the reusable filter's defaults stay unchanged.
+
+Run the offline regression checks with:
+
+```bash
+node --test relevance/*.test.js test/*.test.mjs
+python -m unittest discover -s test -p 'test*.py'
+python -m unittest discover -s relevance -p 'test_filter.py'
+node relevance/offline-check.js
+```
 
 ```
 index.html ──▶ NanoGPT  (auth, diff, apply — all from the browser)
@@ -204,7 +225,7 @@ avatar:
 ```
 POST https://nano-gpt.com/v1/images/generations
 { "model": "seedream-v5.0-lite", "prompt": <portrait.md>, "n": 1,
-  "size": "832x1216", "response_format": "b64_json" }   ──▶  { data: [{ b64_json }], cost }
+  "size": "768x1024", "response_format": "b64_json" }   ──▶  { data: [{ b64_json }], cost }
 ```
 
 **Save / load / share — all client-side, no server:**
