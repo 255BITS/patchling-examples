@@ -453,6 +453,70 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(result["failed_open"], 1)
         self.assertEqual(result["relevant"]["a.py"], "x")
 
+    def test_truncated_utf8_tail_keeps_the_valid_prefix(self):
+        raw = bytes([0x61, 0xC3])
+        self.assertFalse(is_binary_content(raw))
+        self.assertEqual(decode_utf8_bytes(raw), "a")
+        self.assertNotIn("\ufffd", decode_utf8_bytes(raw))
+        seen = {}
+
+        def call_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+            seen["body"] = messages[0]["content"]
+            return {"choices": [{"message": {"content": "yes"}}]}
+
+        result = filter_relevant(
+            {"a.py": raw},
+            "Edit the target module only.",
+            call_llm=call_llm,
+            cache=False,
+            log=lambda _message: None,
+        )
+        self.assertIsNone(result["decisions"][0]["skipped_reason"])
+        self.assertEqual(result["files"]["a.py"], "a")
+        self.assertEqual(result["relevant"]["a.py"], "a")
+        self.assertTrue(seen["body"].endswith("File contents:\na"))
+        self.assertNotIn("\ufffd", seen["body"])
+
+    def test_ignored_binary_is_excluded_before_any_decode(self):
+        import filter_relevant as filter_module
+
+        raw = bytes([0x61, 0xC3, 0xFF, 0x00])
+        decoded = []
+        original = filter_module.decode_utf8_bytes
+
+        def spy(data):
+            payload = bytes(data)
+            decoded.append(payload)
+            return original(payload)
+
+        filter_module.decode_utf8_bytes = spy
+        try:
+            calls = {"n": 0}
+
+            def call_llm(api_key, base_url, model, messages, max_tokens, temperature, reasoning_effort=None):
+                calls["n"] += 1
+                self.assertIn("src/keep.py", messages[0]["content"])
+                return {"choices": [{"message": {"content": "yes"}}]}
+
+            result = filter_relevant(
+                {"dist/app.min.js": raw, "src/keep.py": "export const n = 1\n"},
+                "Edit the target module only.",
+                call_llm=call_llm,
+                cache=False,
+                log=lambda _message: None,
+            )
+        finally:
+            filter_module.decode_utf8_bytes = original
+
+        ignored = next(row for row in result["decisions"] if row["path"] == "dist/app.min.js")
+        self.assertEqual(ignored["decision"], "no")
+        self.assertEqual(ignored["skipped_reason"], "ignored")
+        self.assertNotIn("dist/app.min.js", result["files"])
+        self.assertEqual(result["dropped"]["dist/app.min.js"], raw)
+        self.assertEqual(decoded, [])
+        self.assertEqual(calls["n"], 1)
+        self.assertEqual(result["files"]["src/keep.py"], "export const n = 1\n")
+
     def test_invalid_utf8_after_the_probe_is_binary_and_keeps_original_bytes(self):
         payload = b"a" * 8192 + b"\xffTAIL"
         self.assertTrue(is_binary_content(payload))
@@ -639,7 +703,7 @@ class CorpusTests(unittest.TestCase):
 
 
 class ParityFixtureTests(unittest.TestCase):
-    FIXTURE_SHA256 = "6976ad71714be0138a6043d9bdeb724abe34a65515f8389913dca10a0c48c4f2"
+    FIXTURE_SHA256 = "c5f3bd4af43ff2a2036b8012c2ed69c70cd9b2c09281bc58e864fb0194eebe5c"
 
     @classmethod
     def setUpClass(cls):
@@ -680,6 +744,8 @@ class ParityFixtureTests(unittest.TestCase):
         for row in fixture["binary"]["cases"]:
             raw = b"a" * row["pad"] + bytes(row["tail"])
             self.assertEqual(is_binary_content(raw), row["binary"], row["name"])
+            if row.get("text") is not None:
+                self.assertEqual(decode_utf8_bytes(raw), row["text"], row["name"])
         bom = fixture["bom"]
         bom_bytes = bytes(bom["bytes"])
         self.assertEqual(decode_utf8_bytes(bom_bytes), bom["text"])

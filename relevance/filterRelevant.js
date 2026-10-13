@@ -155,10 +155,10 @@ function prefixPlausible(bytes, index, have, need) {
 }
 
 /**
- * Whole payload. A NUL or an invalid UTF-8 byte anywhere is binary.
- * An incomplete tail of at most 3 bytes is text only when the file ends
- * inside the 8192-byte probe and some valid text came first. A non-empty
- * buffer that decodes to empty text is binary.
+ * Whole payload. A NUL or a genuinely invalid UTF-8 byte is binary.
+ * An incomplete trailing sequence keeps the valid prefix at any length
+ * (`0x61 0xC3` is "a", not binary). A non-empty buffer that decodes to
+ * empty text is binary.
  * @param {Uint8Array} bytes
  * @returns {boolean}
  */
@@ -178,7 +178,6 @@ function sampleIsBinary(bytes) {
       const have = size - index;
       if (have > 3) return true;
       if (!prefixPlausible(bytes, index, have, need)) return true;
-      if (size > BINARY_PROBE_BYTES) return true;
       return index === 0;
     }
     if (!sequenceValid(bytes, index, need)) return true;
@@ -365,7 +364,8 @@ export async function makeCacheKey(fields) {
 }
 
 /**
- * Valid UTF-8 becomes text. A leading BOM is kept. An incomplete tail is dropped.
+ * Valid UTF-8 becomes text. A leading BOM is kept. A truncated trailing
+ * sequence keeps the valid prefix (`0x61 0xC3` is "a").
  * @param {Uint8Array} bytes
  * @returns {string}
  */
@@ -809,7 +809,8 @@ export async function filterRelevant(files, task, opts = {}) {
   for (const decision of decisions) {
     if (decision.failedOpen) failedOpen += 1;
     const content = files[decision.path];
-    const stored = decision.skippedReason === "binary" || typeof content === "string" || !(content instanceof Uint8Array)
+    const skipped = decision.skippedReason;
+    const stored = skipped === "binary" || skipped === "ignored" || typeof content === "string" || !(content instanceof Uint8Array)
       ? content
       : decodeUtf8Bytes(content);
     if (decision.relevant) relevant[decision.path] = stored;

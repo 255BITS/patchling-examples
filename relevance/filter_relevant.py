@@ -160,10 +160,10 @@ def _prefix_plausible(raw: bytes, index: int, have: int, need: int) -> bool:
 
 
 def _sample_is_binary(raw: bytes) -> bool:
-    """Whole payload. Invalid UTF-8 anywhere is binary.
+    """Whole payload. A genuinely invalid UTF-8 byte is binary.
 
-    An incomplete tail of at most 3 bytes is text only when the file ends
-    inside the 8192-byte probe and some valid text came first.
+    An incomplete trailing sequence keeps the valid prefix at any length
+    (``0x61 0xC3`` is ``"a"``, not binary).
     """
     size = len(raw)
     index = 0
@@ -183,8 +183,6 @@ def _sample_is_binary(raw: bytes) -> bool:
                 return True
             if not _prefix_plausible(raw, index, have, need):
                 return True
-            if size > BINARY_PROBE_BYTES:
-                return True
             return index == 0
         if not _sequence_valid(raw, index, need):
             return True
@@ -195,9 +193,9 @@ def _sample_is_binary(raw: bytes) -> bool:
 def is_binary_content(content: Any) -> bool:
     """NUL or invalid UTF-8 anywhere in the payload.
 
-    An incomplete tail of at most 3 bytes is still text when the file ends
-    inside the first 8192 bytes and some valid text came first.
-    A non-empty buffer that decodes to empty text is binary.
+    An incomplete trailing sequence keeps the valid prefix at any length
+    (bytes ``0x61 0xC3`` are the text ``"a"``). A non-empty buffer that
+    decodes to empty text is binary.
     """
     if content is None:
         return False
@@ -343,7 +341,7 @@ def make_cache_key(
 
 
 def decode_utf8_bytes(raw: bytes) -> str:
-    """Valid UTF-8 becomes text. A leading BOM is kept. An incomplete tail is dropped."""
+    """Valid UTF-8 becomes text. A leading BOM is kept. A truncated tail keeps its prefix."""
     try:
         return raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -765,7 +763,8 @@ def filter_relevant(
         if decision["failed_open"]:
             failed_open += 1
         content = files[decision["path"]]
-        if decision.get("skipped_reason") != "binary" and isinstance(content, (bytes, bytearray)):
+        reason = decision.get("skipped_reason")
+        if reason not in ("binary", "ignored") and isinstance(content, (bytes, bytearray)):
             stored = decode_utf8_bytes(bytes(content))
         else:
             stored = content
