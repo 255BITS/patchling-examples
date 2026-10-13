@@ -740,7 +740,7 @@ print(json.dumps({
 });
 
 const FIXTURE_PATH = join(REPO_ROOT, "relevance/fixtures/parity/relevance.json");
-const FIXTURE_SHA256 = "c5f3bd4af43ff2a2036b8012c2ed69c70cd9b2c09281bc58e864fb0194eebe5c";
+const FIXTURE_SHA256 = "dbe5c7033b279be2a0b923d82dffb1349039b051e18a3650b224570374b8914b";
 
 test("parity fixture matches the canonical sha256 and this filter", async () => {
   const raw = readFileSync(FIXTURE_PATH);

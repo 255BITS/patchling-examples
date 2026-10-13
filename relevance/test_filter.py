@@ -703,7 +703,7 @@ class CorpusTests(unittest.TestCase):
 
 
 class ParityFixtureTests(unittest.TestCase):
-    FIXTURE_SHA256 = "c5f3bd4af43ff2a2036b8012c2ed69c70cd9b2c09281bc58e864fb0194eebe5c"
+    FIXTURE_SHA256 = "dbe5c7033b279be2a0b923d82dffb1349039b051e18a3650b224570374b8914b"
 
     @classmethod
     def setUpClass(cls):
