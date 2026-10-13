@@ -33,9 +33,11 @@ later lookups try `low` first, then empty. A cache read failure is a miss.
 A cache write failure is logged. Neither aborts the run. A missing or
 non-JSON model envelope fails open and is not cached. Valid UTF-8 bytes are
 decoded to text before the call, and that text is what the result maps
-forward. A leading UTF-8 BOM stays in that text. Invalid UTF-8 anywhere in
-the file, including a non-empty buffer that decodes to nothing, is binary:
-the model is not called, and an include policy forwards the original bytes.
+forward. A leading UTF-8 BOM stays in that text. A truncated trailing
+sequence keeps the valid prefix, so bytes `0x61 0xC3` stay the text `a`.
+Any other invalid UTF-8, including a non-empty buffer that decodes to
+nothing, is binary: the model is not called, and an include policy forwards
+the original bytes. An ignored path is excluded before that decode.
 
 Figures quoted elsewhere — Flask recall 1.0 and 0.8× overhead — are
 **unverified**. This repo does not re-run that pass and does not treat those

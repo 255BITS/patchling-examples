@@ -416,6 +416,59 @@ test("a TypeError is not treated as a rejected reasoning effort", async () => {
   assert.equal(result.relevant["a.js"], "x");
 });
 
+test("a truncated UTF-8 tail keeps the valid prefix", async () => {
+  const bytes = Uint8Array.from([0x61, 0xc3]);
+  assert.equal(isBinaryContent(bytes), false);
+  assert.equal(decodeUtf8Bytes(bytes), "a");
+  assert.equal(decodeUtf8Bytes(bytes).includes("\uFFFD"), false);
+  let body = "";
+  const result = await filterRelevant({ "a.py": bytes }, TASK, {
+    cache: false,
+    log: () => {},
+    callLlm: async (req) => {
+      body = req.messages[0].content;
+      return { choices: [{ message: { content: "yes" } }] };
+    },
+  });
+  assert.equal(result.decisions[0].skippedReason, null);
+  assert.equal(result.files["a.py"], "a");
+  assert.equal(result.relevant["a.py"], "a");
+  assert.equal(body.endsWith("File contents:\na"), true);
+  assert.equal(body.includes("\uFFFD"), false);
+});
+
+test("an ignored binary file is excluded before any UTF-8 decode", async () => {
+  const Original = globalThis.TextDecoder;
+  let decodes = 0;
+  globalThis.TextDecoder = class SpyDecoder extends Original {
+    decode(...args) {
+      decodes += 1;
+      return super.decode(...args);
+    }
+  };
+  try {
+    const bytes = Uint8Array.from([0x61, 0xc3, 0xff, 0x00]);
+    const result = await filterRelevant(
+      { "dist/app.min.js": bytes, "src/keep.js": "export const n = 1;\n" },
+      TASK,
+      {
+        cache: false,
+        log: () => {},
+        callLlm: async () => ({ choices: [{ message: { content: "yes" } }] }),
+      },
+    );
+    const ignored = result.decisions.find((decision) => decision.path === "dist/app.min.js");
+    assert.equal(ignored.decision, "no");
+    assert.equal(ignored.skippedReason, "ignored");
+    assert.equal(Object.hasOwn(result.files, "dist/app.min.js"), false);
+    assert.equal(result.dropped["dist/app.min.js"], bytes);
+    assert.equal(decodes, 0);
+    assert.equal(result.files["src/keep.js"], "export const n = 1;\n");
+  } finally {
+    globalThis.TextDecoder = Original;
+  }
+});
+
 test("invalid UTF-8 after the 8192-byte probe is binary and keeps original bytes", async () => {
   const payload = new Uint8Array(8192 + 1 + 4);
   payload.fill(0x61, 0, 8192);
@@ -687,7 +740,7 @@ print(json.dumps({
 });
 
 const FIXTURE_PATH = join(REPO_ROOT, "relevance/fixtures/parity/relevance.json");
-const FIXTURE_SHA256 = "6976ad71714be0138a6043d9bdeb724abe34a65515f8389913dca10a0c48c4f2";
+const FIXTURE_SHA256 = "dbe5c7033b279be2a0b923d82dffb1349039b051e18a3650b224570374b8914b";
 
 test("parity fixture matches the canonical sha256 and this filter", async () => {
   const raw = readFileSync(FIXTURE_PATH);
@@ -727,6 +780,7 @@ test("parity fixture matches the canonical sha256 and this filter", async () => 
     bytes.fill(0x61, 0, row.pad);
     bytes.set(row.tail, row.pad);
     assert.equal(isBinaryContent(bytes), row.binary, row.name);
+    if (row.text != null) assert.equal(decodeUtf8Bytes(bytes), row.text, row.name);
   }
   const bomBytes = Uint8Array.from(fixture.bom.bytes);
   assert.equal(decodeUtf8Bytes(bomBytes), fixture.bom.text);
