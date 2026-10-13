@@ -150,7 +150,7 @@ import { buildEnvironment, generateDiff, smartapply } from "patchling";
 const filtered = await filterRelevant(files, task, {
   model: "xiaomi/mimo-v2.6-flash",
   maxOutputTokens: 1024,
-  reasoningEffort: "low",
+  reasoningEffort: "none",
   callLlm: (req) => postChat(req, { apiKey, baseUrl }),
 });
 
@@ -170,7 +170,7 @@ filtered = filter_relevant(
     base_url=base_url,
     model="xiaomi/mimo-v2.6-flash",
     max_output_tokens=1024,
-    reasoning_effort="low",
+    reasoning_effort="none",
 )
 diff = generate_diff(build_environment(filtered["relevant"]), task, api_key=api_key)
 updated = smartapply(diff, filtered["relevant"], api_key=api_key)</pre>
@@ -441,6 +441,7 @@ async function runFilter() {
     const model = $("filtermodel").value.trim() || CHEAP_MODEL;
     const result = await filterRelevant(state.files, state.task.task, {
       model,
+      reasoningEffort: model === CHEAP_MODEL ? "none" : undefined,
       callLlm: async (req) => {
         const response = await postChat(req, { apiKey: key, baseUrl: lib.resolveBaseUrl() });
         addUsage(response);
@@ -501,6 +502,7 @@ async function runApply() {
     const diff = await lib.generateDiff(lib.buildEnvironment(relevant), taskText, {
       apiKey: key,
       model,
+      reasoningEffort: model === CHEAP_MODEL ? "none" : undefined,
       callLlm: async (req) => {
         const response = await lib.callLlm(req);
         addUsage(response);

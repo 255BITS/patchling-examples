@@ -71,6 +71,7 @@ async function liveFilter(files, task, model) {
   const baseUrl = patchling.resolveBaseUrl();
   return filterRelevant(files, task, {
     model,
+    reasoningEffort: model === CHEAP_MODEL ? "none" : undefined,
     callLlm: (req) => postChat(req, { apiKey, baseUrl }),
     onDecision: (decision) => {
       const mark = decision.uncertain ? "keep?" : decision.relevant ? "yes" : "no";
