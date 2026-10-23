@@ -1,0 +1,25 @@
+name: Ink packaging
+on:
+  pull_request:
+    paths: [relevance/projects/ink/**, .github/workflows/ink.yml]
+  push:
+    branches: [master]
+    paths: [relevance/projects/ink/**, .github/workflows/ink.yml]
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: relevance/projects/ink
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.17'
+      - run: python -m unittest discover -s tests -v
+      - run: python -m pip install build
+      - run: python -m build
+      - run: python -m pip install dist/*.whl
+      - run: ink --help

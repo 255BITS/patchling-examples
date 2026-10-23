@@ -3,13 +3,13 @@ name = "ink"
 version = "0.1.0"
 description = "A small notebook CLI: add, list, search, and export notes."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 
 [project.scripts]
 ink = "ink.cli:main"
 
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=84.2.1", "wheel>=0.46.2"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
