@@ -43,7 +43,8 @@ for (const page of pages) {
   test(`${page}: the actual demo client streams the selected model via chat completions`, async () => {
     const client = html.match(/function streamingCallLlm\(phase\) \{[^]*?\n\}/)[0];
     let body;
-    const api = runInNewContext(`${client}\nstreamingCallLlm`, {
+    const parser = html.match(/async function readCompletionStream\([^]*?\n\}/)[0];
+    const api = runInNewContext(`${parser}\n${client}\nstreamingCallLlm`, {
       NANOGPT: 'https://nano-gpt.com', TextDecoder, performance, abort: null,
       $: () => ({}), words: (s) => String(s).split(/\s+/).length,
       priceOf: () => ({}), paintUsage() {}, appendText() {},

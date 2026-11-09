@@ -169,7 +169,7 @@ if (location.hostname === "127.0.0.1") location.hostname = "localhost";
 
 // ---------- key storage ----------
 const getKey = () => localStorage.getItem("ngpt_key");
-const setKey = (k) => { k ? localStorage.setItem("ngpt_key", k) : localStorage.removeItem("ngpt_key"); if (k) setEnv("GPTDIFF_LLM_API_KEY", k); };
+const setKey = (k) => { k ? localStorage.setItem("ngpt_key", k) : localStorage.removeItem("ngpt_key"); if (k) setEnv("GPTDIFF_LLM_API_KEY", k); invalidateModels(); };
 if (getKey()) setEnv("GPTDIFF_LLM_API_KEY", getKey());
 
 // ---------- browser OAuth PKCE (token + register are CORS-open) ----------
@@ -237,6 +237,7 @@ $("signout").addEventListener("click", () => { setKey(null); renderAuth(); });
 
 // ---------- model selection ----------
 let allModels = null;     // [{ id, prompt, completion, owned_by, created }]  prices = USD per 1M
+let modelsLoaded = false, modelsKey = null, modelsRequest = null;
 let topOrder = new Map(); // id -> rank for the curated top list; everything else sorts below
 
 // Top list = each frontier lab's latest flagship (newest release matching the lab's
@@ -288,18 +289,51 @@ function renderModelRow(target) {
 }
 
 async function loadModels() {
-  if (allModels) return allModels;
-  let arr = [];
-  try {
-    const headers = {}; const k = getKey(); if (k) headers.Authorization = `Bearer ${k}`;
-    arr = (await (await fetch(`${NANOGPT}/api/v1/models?detailed=true`, { headers })).json()).data || [];
-  } catch { /* ignore */ }
-  allModels = arr.map((m) => ({ id: m.id, prompt: m.pricing?.prompt, completion: m.pricing?.completion, owned_by: m.owned_by, created: m.created })).filter((m) => m.id);
-  if (!allModels.length) allModels = [{ id: DEFAULT_MODEL }]; // fallback; custom ids still typeable
-  computeTop();
-  allModels.sort((a, b) => (rank(a.id) - rank(b.id)) || a.id.localeCompare(b.id));
-  renderModelRow("diff"); renderModelRow("apply"); // refresh prices/tags now that we have data
-  return allModels;
+  const key = getKey() || "";
+  if (modelsLoaded && modelsKey === key) return allModels;
+  if (modelsRequest && modelsRequest.key === key) return modelsRequest.promise;
+  const request = { key, promise: null };
+  modelsRequest = request;
+  request.promise = (async () => {
+    let next, loaded = false;
+    try {
+      const headers = {}; if (key) headers.Authorization = `Bearer ${key}`;
+      const response = await fetch("https://nano-gpt.com/api/v1/models?detailed=true", { headers });
+      if (!response.ok) throw new Error("Model catalog request failed");
+      const data = (await response.json()).data;
+      if (!Array.isArray(data)) throw new Error("Invalid model catalog");
+      next = data.filter((m) => m && typeof m.id === "string" && m.id.trim()).map((m) => ({
+        id: m.id, owned_by: m.owned_by, prompt: m.pricing?.prompt, completion: m.pricing?.completion, created: m.created,
+      }));
+      if (!next.length) throw new Error("Empty model catalog");
+      loaded = true;
+    } catch { next = [{ id: DEFAULT_MODEL }]; } // exact-id entry remains available; the next open retries
+    try {
+      // A sign-in/out or newer request must not inherit an older account's catalog/prices.
+      if (modelsRequest !== request || (getKey() || "") !== key) return allModels || [{ id: DEFAULT_MODEL }];
+      allModels = next;
+      modelsLoaded = loaded;
+      modelsKey = key;
+      computeTop();
+      allModels.sort((a, b) => (rank(a.id) - rank(b.id)) || a.id.localeCompare(b.id));
+      renderModelRow("diff"); renderModelRow("apply");
+      return allModels;
+    } finally {
+      if (modelsRequest === request) modelsRequest = null;
+    }
+  })();
+  return request.promise;
+}
+function invalidateModels() {
+  allModels = null;
+  modelsLoaded = false;
+  modelsKey = null;
+  modelsRequest = null;
+  topOrder = new Map();
+  $("modelpicker").style.display = "none";
+  $("modellist").innerHTML = "";
+  $("modelcount").textContent = "";
+  renderModelRow("diff"); renderModelRow("apply");
 }
 
 // Tags: TEE = private (runs in a Trusted Execution Environment); OpenAI/Anthropic = closed source.
@@ -371,6 +405,55 @@ function paintUsage() {
   $("cost").textContent = fmtCost(prog.cost + prog.liveCost); // committed + in-flight estimate
 }
 
+// Inline so each example remains a standalone file, including file:// use.
+async function readCompletionStream(response, onChunk) {
+  if (!response.body || typeof response.body.getReader !== "function") throw new Error("No completion stream");
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let buffer = "", dataLines = [], content = "", pricing = null, finished = false, finishReason = null;
+  const incomplete = (message) => { const error = new Error(message); error.name = "IncompleteCompletionError"; return error; };
+  const dispatch = () => {
+    if (!dataLines.length) return false;
+    const data = dataLines.join("\n"); dataLines = [];
+    if (data.trim() === "[DONE]") return true;
+    let chunk; try { chunk = JSON.parse(data); } catch { return false; }
+    if (chunk.error) throw new Error("LLM stream error: " + JSON.stringify(chunk.error));
+    const reason = chunk.choices?.[0]?.finish_reason;
+    if (reason === "length" || reason === "content_filter") throw incomplete("Incomplete completion: " + reason);
+    if (reason != null) finishReason = reason;
+    const text = chunk.choices?.[0]?.delta?.content;
+    if (typeof text === "string") content += text;
+    if (chunk.x_nanogpt_pricing) pricing = chunk.x_nanogpt_pricing;
+    onChunk?.(chunk);
+    return false;
+  };
+  const line = (text) => {
+    if (text.endsWith("\r")) text = text.slice(0, -1);
+    if (!text) return dispatch();
+    if (text.startsWith("data:")) dataLines.push(text.slice(text[5] === " " ? 6 : 5));
+    return false;
+  };
+  try {
+    while (!finished) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let at;
+      while ((at = buffer.indexOf("\n")) !== -1) {
+        const part = buffer.slice(0, at); buffer = buffer.slice(at + 1);
+        if (line(part)) { finished = true; break; }
+      }
+    }
+    buffer += decoder.decode();
+    if (!finished && buffer) finished = line(buffer);
+    if (!finished) finished = dispatch();
+    if (!finished && !["stop", "tool_calls", "function_call"].includes(finishReason)) throw incomplete("Stream ended before a terminal completion event");
+    return { content, pricing };
+  } finally {
+    try { if (typeof reader.cancel === "function") Promise.resolve(reader.cancel()).catch(() => {}); } catch { /* preserve result/error */ }
+    try { if (typeof reader.releaseLock === "function") reader.releaseLock(); } catch { /* already released */ }
+  }
+}
+
 function streamingCallLlm(phase) {
   return async ({ apiKey, baseUrl, model, messages, maxTokens = null, temperature = 1.0 }) => {
     $("phase").textContent = phase;
@@ -397,43 +480,24 @@ function streamingCallLlm(phase) {
     } catch (e) { prog.liveIn -= inEst; prog.liveCost -= myCost; throw e; }
     if (!r.ok) { prog.liveIn -= inEst; prog.liveCost -= myCost; throw new Error(`LLM ${r.status}: ${await r.text()}`); }
 
-    const reader = r.body.getReader();
-    const dec = new TextDecoder();
-    let buf = "", content = "", reasoning = "", pricing = null, lastTick = 0;
+    let content = "", reasoning = "", pricing = null, lastTick = 0;
     try {
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop();
-        for (const line of lines) {
-          const t = line.trim();
-          if (!t.startsWith("data:")) continue;
-          const data = t.slice(5).trim();
-          if (data === "[DONE]") continue;
-          let j; try { j = JSON.parse(data); } catch { continue; }
-          const d = j.choices?.[0]?.delta;
-          if (d) {
-            if (d.content) { content += d.content; appendText(phase, d.content); }
-            if (d.reasoning) reasoning += d.reasoning;
-            if (d.content || d.reasoning) {
-              // recount from accumulated text (avoids miscounting words split across chunks)
-              const cur = words(content) + words(reasoning);
-              prog.liveOut += cur - prevOut; prevOut = cur; recost();
-              const now = performance.now();
-              if (now - lastTick > 80) { lastTick = now; paintUsage(); $("live").textContent = content ? "" : "· thinking…"; }
-            }
-          }
-          if (j.x_nanogpt_pricing) pricing = j.x_nanogpt_pricing;
+      ({ content, pricing } = await readCompletionStream(r, (chunk) => {
+        const delta = chunk.choices?.[0]?.delta;
+        if (!delta) return;
+        if (delta.content) { content += delta.content; appendText(phase, delta.content); }
+        if (delta.reasoning) reasoning += delta.reasoning;
+        if (delta.content || delta.reasoning) {
+          const current = words(content) + words(reasoning);
+          prog.liveOut += current - prevOut; prevOut = current; recost();
+          const now = performance.now();
+          if (now - lastTick > 80) { lastTick = now; paintUsage(); $("live").textContent = content ? "" : "· thinking…"; }
         }
-      }
-    } catch (e) {
-      // Stop() aborts the fetch mid-stream — unwind this call's live estimates and rethrow.
+      }));
+    } catch (error) {
       prog.liveIn -= inEst; prog.liveOut -= prevOut; prog.liveCost -= myCost; paintUsage();
-      throw e;
+      throw error;
     }
-    // Commit: drop this call's estimates, add exact tokens (fall back to the estimate).
     prog.liveIn -= inEst; prog.liveOut -= prevOut; prog.liveCost -= myCost;
     prog.inDone += pricing?.inputTokens ?? inEst;
     prog.outDone += pricing?.outputTokens ?? prevOut;
