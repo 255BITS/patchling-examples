@@ -23,6 +23,13 @@ browser are replaced; custom choices are preserved. Picture Me starts with
 `flux-2-klein-base-4b/edit` for images and MiMo 2.6 Flash for prompt writing.
 Live catalogs still populate every picker.
 
+Catalog failures use a temporary fallback and retry on the next picker open.
+Signing in or out invalidates catalog prices; late responses from an older
+credential cannot replace the current catalog. Inline streaming clients reject
+EOF without a terminal event and explicit length/content-filter truncation,
+release their response readers, and do not replay partial requests. These
+checks are inline so each demo retains its standalone `file://` behavior.
+
 IDs, capabilities, prices, and image sizes were verified on 2026-10-13 using
 NanoGPT's [text catalog](https://nano-gpt.com/api/v1/models?detailed=true) and
 [image catalog](https://nano-gpt.com/api/v1/image-models). The offline snapshot
@@ -50,6 +57,18 @@ Open the page, authenticate one of two ways, then edit the file + goal and hit *
   (loopback) or https, since OAuth redirects there. The key is stored in `localStorage`.
 - **paste key** — paste a key from [nano-gpt.com](https://nano-gpt.com/r/FXrrGWE4) → Settings → API. Works even when
   the file is opened directly (`file://`).
+
+The editor demos keep the files and model choices submitted at the start of each
+request. If you edit, add, delete a file, or select an older version while it is
+running, the older result is discarded and your newer work stays in the editor. Run the
+request again against that version. A successful multi-file apply can be undone
+until the next manual project edit; a failed request keeps any still-valid undo.
+
+In MARVIS, conversation replies remain independent of personality changes and
+survive undoing a personality change. Clearing the conversation or loading a save
+invalidates pending replies, personality changes, and portrait results. An older
+save-file read cannot replace a newer load or edits made while it was being read.
+The saved JSON format stays unchanged.
 
 ### Serve it locally (for OAuth)
 

@@ -207,7 +207,7 @@ if (location.hostname === "127.0.0.1") location.hostname = "localhost";
 
 // ---------- key storage ----------
 const getKey = () => localStorage.getItem("ngpt_key");
-const setKey = (k) => { k ? localStorage.setItem("ngpt_key", k) : localStorage.removeItem("ngpt_key"); if (k) setEnv("GPTDIFF_LLM_API_KEY", k); };
+const setKey = (k) => { k ? localStorage.setItem("ngpt_key", k) : localStorage.removeItem("ngpt_key"); if (k) setEnv("GPTDIFF_LLM_API_KEY", k); invalidateModels(); };
 if (getKey()) setEnv("GPTDIFF_LLM_API_KEY", getKey());
 
 // ---------- browser OAuth PKCE ----------
@@ -262,7 +262,7 @@ function renderAuth() {
   $("signin").style.display = signed ? "none" : "";
   $("pastebtn").style.display = signed ? "none" : "";
   $("signout").style.display = signed ? "" : "none";
-  $("run").disabled = !signed;
+  $("run").disabled = !signed || applying;
 }
 $("signin").addEventListener("click", (e) => { e.preventDefault(); signIn().catch((err) => $("status").textContent = "sign-in error: " + err.message); });
 $("pastebtn").addEventListener("click", () => { $("key").style.display = "block"; $("keyinput").focus(); });
@@ -271,6 +271,7 @@ $("signout").addEventListener("click", () => { setKey(null); renderAuth(); });
 
 // ---------- model selection ----------
 let allModels = null, topOrder = new Map();
+let modelsLoaded = false, modelsKey = null, modelsRequest = null;
 const LABS = [
   ["OpenAI", /^openai\/(gpt-[0-9]|o[1-9])/i],
   ["Anthropic", /claude-(opus|sonnet)/i],
@@ -311,18 +312,51 @@ function renderModelRow(target) {
   $(`modeltags-${target}`).replaceChildren(...tagEls(m));
 }
 async function loadModels() {
-  if (allModels) return allModels;
-  let arr = [];
-  try {
-    const headers = {}; const k = getKey(); if (k) headers.Authorization = `Bearer ${k}`;
-    arr = (await (await fetch(`${NANOGPT}/api/v1/models?detailed=true`, { headers })).json()).data || [];
-  } catch { /* ignore */ }
-  allModels = arr.map((m) => ({ id: m.id, prompt: m.pricing?.prompt, completion: m.pricing?.completion, owned_by: m.owned_by, created: m.created })).filter((m) => m.id);
-  if (!allModels.length) allModels = [{ id: DEFAULT_MODEL }];
-  computeTop();
-  allModels.sort((a, b) => (rank(a.id) - rank(b.id)) || a.id.localeCompare(b.id));
+  const key = getKey() || "";
+  if (modelsLoaded && modelsKey === key) return allModels;
+  if (modelsRequest && modelsRequest.key === key) return modelsRequest.promise;
+  const request = { key, promise: null };
+  modelsRequest = request;
+  request.promise = (async () => {
+    let next, loaded = false;
+    try {
+      const headers = {}; if (key) headers.Authorization = `Bearer ${key}`;
+      const response = await fetch("https://nano-gpt.com/api/v1/models?detailed=true", { headers });
+      if (!response.ok) throw new Error("Model catalog request failed");
+      const data = (await response.json()).data;
+      if (!Array.isArray(data)) throw new Error("Invalid model catalog");
+      next = data.filter((m) => m && typeof m.id === "string" && m.id.trim()).map((m) => ({
+        id: m.id, owned_by: m.owned_by, prompt: m.pricing?.prompt, completion: m.pricing?.completion, created: m.created,
+      }));
+      if (!next.length) throw new Error("Empty model catalog");
+      loaded = true;
+    } catch { next = [{ id: DEFAULT_MODEL }]; } // exact-id entry remains available; the next open retries
+    try {
+      // A sign-in/out or newer request must not inherit an older account's catalog/prices.
+      if (modelsRequest !== request || (getKey() || "") !== key) return allModels || [{ id: DEFAULT_MODEL }];
+      allModels = next;
+      modelsLoaded = loaded;
+      modelsKey = key;
+      computeTop();
+      allModels.sort((a, b) => (rank(a.id) - rank(b.id)) || a.id.localeCompare(b.id));
+      renderModelRow("diff"); renderModelRow("apply");
+      return allModels;
+    } finally {
+      if (modelsRequest === request) modelsRequest = null;
+    }
+  })();
+  return request.promise;
+}
+function invalidateModels() {
+  allModels = null;
+  modelsLoaded = false;
+  modelsKey = null;
+  modelsRequest = null;
+  topOrder = new Map();
+  $("modelpicker").style.display = "none";
+  $("modellist").innerHTML = "";
+  $("modelcount").textContent = "";
   renderModelRow("diff"); renderModelRow("apply");
-  return allModels;
 }
 function tagsFor(m) {
   const t = [];
@@ -385,6 +419,55 @@ function paintUsage() {
   $("outTok").textContent = n(prog.outDone + prog.liveOut);
   $("cost").textContent = fmtCost(prog.cost + prog.liveCost); // committed + in-flight estimate
 }
+// Inline so each example remains a standalone file, including file:// use.
+async function readCompletionStream(response, onChunk) {
+  if (!response.body || typeof response.body.getReader !== "function") throw new Error("No completion stream");
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let buffer = "", dataLines = [], content = "", pricing = null, finished = false, finishReason = null;
+  const incomplete = (message) => { const error = new Error(message); error.name = "IncompleteCompletionError"; return error; };
+  const dispatch = () => {
+    if (!dataLines.length) return false;
+    const data = dataLines.join("\n"); dataLines = [];
+    if (data.trim() === "[DONE]") return true;
+    let chunk; try { chunk = JSON.parse(data); } catch { return false; }
+    if (chunk.error) throw new Error("LLM stream error: " + JSON.stringify(chunk.error));
+    const reason = chunk.choices?.[0]?.finish_reason;
+    if (reason === "length" || reason === "content_filter") throw incomplete("Incomplete completion: " + reason);
+    if (reason != null) finishReason = reason;
+    const text = chunk.choices?.[0]?.delta?.content;
+    if (typeof text === "string") content += text;
+    if (chunk.x_nanogpt_pricing) pricing = chunk.x_nanogpt_pricing;
+    onChunk?.(chunk);
+    return false;
+  };
+  const line = (text) => {
+    if (text.endsWith("\r")) text = text.slice(0, -1);
+    if (!text) return dispatch();
+    if (text.startsWith("data:")) dataLines.push(text.slice(text[5] === " " ? 6 : 5));
+    return false;
+  };
+  try {
+    while (!finished) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let at;
+      while ((at = buffer.indexOf("\n")) !== -1) {
+        const part = buffer.slice(0, at); buffer = buffer.slice(at + 1);
+        if (line(part)) { finished = true; break; }
+      }
+    }
+    buffer += decoder.decode();
+    if (!finished && buffer) finished = line(buffer);
+    if (!finished) finished = dispatch();
+    if (!finished && !["stop", "tool_calls", "function_call"].includes(finishReason)) throw incomplete("Stream ended before a terminal completion event");
+    return { content, pricing };
+  } finally {
+    try { if (typeof reader.cancel === "function") Promise.resolve(reader.cancel()).catch(() => {}); } catch { /* preserve result/error */ }
+    try { if (typeof reader.releaseLock === "function") reader.releaseLock(); } catch { /* already released */ }
+  }
+}
+
 function streamingCallLlm(phase) {
   return async ({ apiKey, baseUrl, model, messages, maxTokens = null, temperature = 1.0 }) => {
     $("phase").textContent = phase;
@@ -407,34 +490,23 @@ function streamingCallLlm(phase) {
       });
     } catch (e) { prog.liveIn -= inEst; prog.liveCost -= myCost; throw e; }
     if (!r.ok) { prog.liveIn -= inEst; prog.liveCost -= myCost; throw new Error(`LLM ${r.status}: ${await r.text()}`); }
-    const reader = r.body.getReader();
-    const dec = new TextDecoder();
-    let buf = "", content = "", reasoning = "", pricing = null, lastTick = 0;
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const lines = buf.split("\n");
-      buf = lines.pop();
-      for (const line of lines) {
-        const t = line.trim();
-        if (!t.startsWith("data:")) continue;
-        const data = t.slice(5).trim();
-        if (data === "[DONE]") continue;
-        let j; try { j = JSON.parse(data); } catch { continue; }
-        const d = j.choices?.[0]?.delta;
-        if (d) {
-          if (d.content) { content += d.content; appendText(phase, d.content); }
-          if (d.reasoning) reasoning += d.reasoning;
-          if (d.content || d.reasoning) {
-            const cur = words(content) + words(reasoning);
-            prog.liveOut += cur - prevOut; prevOut = cur; recost();
-            const now = performance.now();
-            if (now - lastTick > 80) { lastTick = now; paintUsage(); $("live").textContent = content ? "" : "· thinking…"; }
-          }
+    let content = "", reasoning = "", pricing = null, lastTick = 0;
+    try {
+      ({ content, pricing } = await readCompletionStream(r, (chunk) => {
+        const delta = chunk.choices?.[0]?.delta;
+        if (!delta) return;
+        if (delta.content) { content += delta.content; appendText(phase, delta.content); }
+        if (delta.reasoning) reasoning += delta.reasoning;
+        if (delta.content || delta.reasoning) {
+          const current = words(content) + words(reasoning);
+          prog.liveOut += current - prevOut; prevOut = current; recost();
+          const now = performance.now();
+          if (now - lastTick > 80) { lastTick = now; paintUsage(); $("live").textContent = content ? "" : "· thinking…"; }
         }
-        if (j.x_nanogpt_pricing) pricing = j.x_nanogpt_pricing;
-      }
+      }));
+    } catch (error) {
+      prog.liveIn -= inEst; prog.liveOut -= prevOut; prog.liveCost -= myCost; paintUsage();
+      throw error;
     }
     prog.liveIn -= inEst; prog.liveOut -= prevOut; prog.liveCost -= myCost;
     prog.inDone += pricing?.inputTokens ?? inEst;
@@ -449,6 +521,32 @@ function streamingCallLlm(phase) {
 let files = {};       // { path: content }
 let active = null;    // selected path
 let undoSnapshot = null;
+
+/* PROJECT_RUN_STATE:START */
+// Only publish a result while it still belongs to the version the user ran.
+let projectRevision = 0, applyGeneration = 0, applying = false;
+function projectEdited() {
+  projectRevision += 1;
+  undoSnapshot = null;
+  $("undo").disabled = true;
+}
+function commitEditor() {
+  if (active != null && files[active] !== undefined && files[active] !== $("editor").value) {
+    files[active] = $("editor").value;
+    projectEdited();
+  }
+}
+function currentProjectRun(id, revision) {
+  return id === applyGeneration && revision === projectRevision;
+}
+function discardProjectRun(id) {
+  if (id !== applyGeneration) return;
+  $("changes").textContent = "Kept your newer edits. Run again to apply this request to the new version.";
+  $("phase").textContent = "newer edits kept";
+  document.querySelector("#progress .spin").style.display = "none";
+}
+/* PROJECT_RUN_STATE:END */
+
 
 // Built-in sample (used when the overlay/ folder can't be fetched, e.g. file://).
 const EMBEDDED_SEED = {
@@ -615,7 +713,7 @@ function renderTabs() {
   host.appendChild(add);
 }
 function selectFile(path) {
-  if (active && files[active] !== undefined) files[active] = $("editor").value; // commit edits
+  commitEditor();
   active = path;
   $("activelabel").textContent = path;
   $("editor").value = files[path] ?? "";
@@ -627,16 +725,18 @@ function addFile() {
   if (!path) return;
   const p = path.trim();
   if (!p || files[p] !== undefined) { if (files[p] !== undefined) selectFile(p); return; }
+  projectEdited();
   files[p] = "";
   renderTabs(); selectFile(p); scheduleLive();
 }
 function deleteFile(path) {
   if (!confirm("Delete " + path + " ?")) return;
+  projectEdited();
   delete files[path];
   if (active === path) active = fileOrder()[0] || null;
   renderTabs(); loadEditor(); scheduleLive();
 }
-$("editor").addEventListener("input", () => { if (active != null) { files[active] = $("editor").value; scheduleLive(); } });
+$("editor").addEventListener("input", () => { if (active != null) { commitEditor(); scheduleLive(); } });
 
 // ---------- preview bundler: stitch every file + GSAP into one HTML ----------
 function bundle(map) {
@@ -675,7 +775,7 @@ function bundle(map) {
 // ---------- live preview ----------
 let liveTimer = null;
 function refreshPreview() {
-  if (active && files[active] !== undefined) files[active] = $("editor").value;
+  commitEditor();
   $("pvframe").srcdoc = bundle(files);
 }
 function scheduleLive() {
@@ -714,7 +814,7 @@ $("bg-cam").addEventListener("click", async () => {
 
 // ---------- export standalone bundle ----------
 $("export").addEventListener("click", () => {
-  if (active && files[active] !== undefined) files[active] = $("editor").value;
+  commitEditor();
   const blob = new Blob([bundle(files)], { type: "text/html" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = "overlay-bundle.html";
@@ -751,9 +851,12 @@ function showChanges(added, removed, changed) {
 
 // ---------- run: diff → smartapply → reconcile → re-render ----------
 async function run() {
-  const key = getKey(); if (!key) return;
-  if (active && files[active] !== undefined) files[active] = $("editor").value; // commit edits
-  undoSnapshot = JSON.parse(JSON.stringify(files));
+  const key = getKey(); if (!key || applying) return;
+  commitEditor();
+  const inputFiles = { ...files };
+  const runId = ++applyGeneration, runRevision = projectRevision;
+  const goal = $("goal").value, diffModel = MODEL, applyModel = APPLY;
+  applying = true;
   $("run").disabled = true; $("undo").disabled = true; curPhase = ""; $("diff").textContent = ""; $("changes").textContent = "";
   prog.inDone = prog.outDone = prog.cost = prog.liveIn = prog.liveOut = prog.liveCost = 0; paintUsage();
   $("progress").style.display = "block"; document.querySelector("#progress .spin").style.display = "";
@@ -762,22 +865,25 @@ async function run() {
   const timer = setInterval(() => { $("elapsed").textContent = ((performance.now() - t0) / 1000).toFixed(1); }, 100);
 
   try {
-    const diff = await generateDiff(buildEnvironment(files), $("goal").value, { apiKey: key, model: MODEL, callLlm: streamingCallLlm("Generating diff") });
+    const diff = await generateDiff(buildEnvironment(inputFiles), goal, { apiKey: key, model: diffModel, callLlm: streamingCallLlm("Generating diff") });
+    if (!currentProjectRun(runId, runRevision)) { discardProjectRun(runId); return; }
     renderDiff(diff);
     const parsed = parseDiffPerFile(diff);
     if (!diff.trim() || !parsed.length) {
       $("changes").textContent = "⚠ The model returned no applicable diff. Try rephrasing the goal.";
     } else {
       const applyLlm = streamingCallLlm("Applying diff");
-      const before = { ...files };
-      const updated = await smartapply(diff, files, {
-        apiKey: key, model: APPLY,
+      const before = inputFiles;
+      const updated = await smartapply(diff, inputFiles, {
+        apiKey: key, model: applyModel,
         callLlmForApply: (p, o, d, m, o2) => callLlmForApply(p, o, d, m, { ...o2, callLlm: applyLlm }),
       });
+      if (!currentProjectRun(runId, runRevision)) { discardProjectRun(runId); return; }
       const beforeKeys = new Set(Object.keys(before)), afterKeys = new Set(Object.keys(updated));
       const added = [...afterKeys].filter((k) => !beforeKeys.has(k));
       const removed = [...beforeKeys].filter((k) => !afterKeys.has(k));
       const changed = [...afterKeys].filter((k) => beforeKeys.has(k) && before[k] !== updated[k]);
+      undoSnapshot = inputFiles;
       files = updated;
       if (active == null || files[active] === undefined) active = fileOrder()[0] || null;
       renderTabs(); loadEditor(); refreshPreview();
@@ -786,17 +892,25 @@ async function run() {
     }
     $("phase").textContent = "done"; document.querySelector("#progress .spin").style.display = "none";
   } catch (e) {
+    if (!currentProjectRun(runId, runRevision)) { discardProjectRun(runId); return; }
     $("changes").textContent = "Error: " + e.message;
     $("progress").style.display = "none";
   } finally {
-    clearInterval(timer); $("run").disabled = false;
+    clearInterval(timer);
+    if (runId === applyGeneration) {
+      applying = false;
+      $("run").disabled = !getKey();
+      $("undo").disabled = !undoSnapshot;
+    }
   }
 }
 $("run").addEventListener("click", run);
 $("goal").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); if (!$("run").disabled) run(); } });
 $("undo").addEventListener("click", () => {
-  if (!undoSnapshot) return;
-  files = undoSnapshot; undoSnapshot = null;
+  if (!undoSnapshot || applying) return;
+  const previous = undoSnapshot;
+  projectEdited();
+  files = previous;
   if (active == null || files[active] === undefined) active = fileOrder()[0] || null;
   renderTabs(); loadEditor(); refreshPreview();
   $("undo").disabled = true; $("changes").textContent = "↶ reverted to the previous version.";
